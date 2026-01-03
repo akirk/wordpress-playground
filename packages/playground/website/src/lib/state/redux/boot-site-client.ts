@@ -259,6 +259,16 @@ export function bootSiteClient(
 			})
 		);
 
+		// Track site access for persistent sites (used for backup reminders)
+		if (site.metadata.storage !== 'none') {
+			dispatch(
+				updateSiteMetadata({
+					slug: site.slug,
+					changes: { lastAccessDate: Date.now() },
+				})
+			);
+		}
+
 		(playground as PlaygroundClient).onNavigation((url) => {
 			dispatch(
 				updateClientInfo({

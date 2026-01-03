@@ -515,6 +515,18 @@ export interface SiteMetadata {
 	 */
 	lastUrl?: string;
 
+	/**
+	 * Timestamp of last successful backup.
+	 * Used to determine if a backup reminder should be shown.
+	 */
+	lastBackupDate?: number;
+
+	/**
+	 * Timestamp of last site access.
+	 * Used to determine if user has worked since last backup.
+	 */
+	lastAccessDate?: number;
+
 	// @TODO: Accept any string as a php version?
 	runtimeConfiguration: RuntimeConfiguration;
 	originalBlueprint: BlueprintV1;
