@@ -40,52 +40,40 @@ const proxy: CommonServerOptions['proxy'] = {
 
 const path = (filename: string) => new URL(filename, import.meta.url).pathname;
 export default defineConfig(({ command, mode }) => {
+	// "persistent" mode enables OPFS storage with a fixed site slug.
+	// Use --mode persistent for production builds or --mode persistent-development for dev.
+	const isPersistentMode = mode.startsWith('persistent');
+	const isProductionBuild = mode === 'production' || mode === 'persistent';
+
 	const corsProxyUrl =
 		'CORS_PROXY_URL' in process.env
 			? process.env.CORS_PROXY_URL
-			: mode === 'production'
+			: isProductionBuild
 				? 'https://wordpress-playground-cors-proxy.net/?'
 				: '/cors-proxy/?';
 
 	const defaultBlueprintUrl =
-		'DEFAULT_BLUEPRINT_URL' in process.env
-			? process.env.DEFAULT_BLUEPRINT_URL
-			: 'https://raw.githubusercontent.com/WordPress/blueprints/refs/heads/trunk/blueprints/welcome/blueprint.json';
+		'https://raw.githubusercontent.com/WordPress/blueprints/refs/heads/trunk/blueprints/welcome/blueprint.json';
 
-	const defaultStorageType =
-		'DEFAULT_STORAGE_TYPE' in process.env
-			? process.env.DEFAULT_STORAGE_TYPE
-			: 'none';
+	const defaultStorageType = isPersistentMode ? 'opfs' : 'none';
+	const defaultSiteSlug = isPersistentMode ? 'default' : undefined;
 
-	const defaultSiteSlug =
-		'DEFAULT_SITE_SLUG' in process.env
-			? process.env.DEFAULT_SITE_SLUG
-			: undefined;
-
-	// Blueprint to use when booting an existing persisted site (e.g., just login)
-	const bootBlueprintUrl =
-		'BOOT_BLUEPRINT_URL' in process.env
-			? process.env.BOOT_BLUEPRINT_URL
-			: undefined;
-
-	const devServerPort =
-		defaultStorageType === 'opfs'
-			? persistentWebsiteDevServerPort
-			: websiteDevServerPort;
+	const devServerPort = isPersistentMode
+		? persistentWebsiteDevServerPort
+		: websiteDevServerPort;
 
 	return {
 		// Split traffic from this server on dev so that the iframe content and
 		// outer content can be served from the same origin. In production it's
 		// already the same host, but dev builds run two separate servers. See proxy
 		// config above.
-		base: mode === 'production' ? '/' : '/website-server/',
+		base: isProductionBuild ? '/' : '/website-server/',
 
 		assetsInclude: ['**/*.so', '**/*.dat'],
 
-		cacheDir:
-			defaultStorageType === 'opfs'
-				? '../../../node_modules/.vite/packages-playground-website-persistent'
-				: '../../../node_modules/.vite/packages-playground-website',
+		cacheDir: isPersistentMode
+			? '../../../node_modules/.vite/packages-playground-website-persistent'
+			: '../../../node_modules/.vite/packages-playground-website',
 
 		css: {
 			modules: {
@@ -152,18 +140,16 @@ export default defineConfig(({ command, mode }) => {
 				content: `
 				export const defaultBlueprintUrl = ${JSON.stringify(defaultBlueprintUrl || undefined)};
 				export const defaultStorageType = ${JSON.stringify(defaultStorageType || 'none')};
-				export const defaultSiteSlug = ${JSON.stringify(defaultSiteSlug || undefined)};
-				export const bootBlueprintUrl = ${JSON.stringify(bootBlueprintUrl || undefined)};`,
+				export const defaultSiteSlug = ${JSON.stringify(defaultSiteSlug || undefined)};`,
 			}),
 			// GitHub OAuth flow and server identification
 			{
 				name: 'configure-server',
 				configureServer(server: ViteDevServer) {
 					server.middlewares.use(oAuthMiddleware);
-					const serverType =
-						defaultStorageType === 'opfs'
-							? 'Persistent Playground'
-							: 'Temporary Playground';
+					const serverType = isPersistentMode
+						? 'Persistent Playground'
+						: 'Temporary Playground';
 					server.printUrls = () => {
 						const url = `http://${websiteDevServerHost}:${devServerPort}/website-server/`;
 						console.log(`  ${serverType}: \x1b[36m${url}\x1b[0m`);

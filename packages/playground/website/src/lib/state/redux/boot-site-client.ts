@@ -26,7 +26,7 @@ import {
 	setGitHubAuthRepoUrl,
 } from './slice-ui';
 import type { PlaygroundDispatch, PlaygroundReduxState } from './store';
-import { selectSiteBySlug } from './slice-sites';
+import { selectSiteBySlug, updateSiteMetadata } from './slice-sites';
 // @ts-ignore
 import { corsProxyUrl } from 'virtual:cors-proxy-url';
 import { modalSlugs } from './slice-ui';
@@ -116,9 +116,7 @@ export function bootSiteClient(
 
 		let blueprint: Blueprint;
 		if (isWordPressInstalled) {
-			// For persisted sites, use runtime config but preserve login/landingPage
-			// from the original blueprint (e.g., boot blueprint for returning users)
-			const originalBlueprint = site.metadata.originalBlueprint as any;
+			// For persisted sites, use runtime config and restore the user's last position
 			blueprint = {
 				preferredVersions: {
 					php: site.metadata.runtimeConfiguration.phpVersion,
@@ -131,12 +129,10 @@ export function bootSiteClient(
 				extraLibraries: site.metadata.runtimeConfiguration
 					.extraLibraries as any[],
 				constants: site.metadata.runtimeConfiguration.constants,
-				// Preserve login and landingPage for boot blueprints
-				...(originalBlueprint?.login !== undefined && {
-					login: originalBlueprint.login,
-				}),
-				...(originalBlueprint?.landingPage !== undefined && {
-					landingPage: originalBlueprint.landingPage,
+				// Auto-login and restore the user's last position
+				login: true,
+				...(site.metadata.lastUrl && {
+					landingPage: site.metadata.lastUrl,
 				}),
 			};
 		} else {
@@ -272,6 +268,15 @@ export function bootSiteClient(
 					},
 				})
 			);
+			// Persist the last URL for persistent sites so we can restore it on next visit
+			if (site.metadata.storage !== 'none') {
+				dispatch(
+					updateSiteMetadata({
+						slug: site.slug,
+						changes: { lastUrl: url },
+					})
+				);
+			}
 		});
 
 		signal.onabort = null;

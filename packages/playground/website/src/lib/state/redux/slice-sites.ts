@@ -29,7 +29,6 @@ import {
 	defaultBlueprintUrl,
 	defaultStorageType,
 	defaultSiteSlug,
-	bootBlueprintUrl,
 } from 'virtual:website-defaults';
 
 /**
@@ -262,13 +261,14 @@ export function setTemporarySiteSpec(
 		getState: () => PlaygroundReduxState
 	) => {
 		// Use the configured default slug for persistent storage, or derive from name
-		const useDefaultSite = defaultSiteSlug && defaultStorageType !== 'none';
+		const useDefaultSite =
+			defaultSiteSlug !== undefined && defaultStorageType !== 'none';
 		const siteSlug = useDefaultSite
-			? defaultSiteSlug
+			? defaultSiteSlug! // Safe: checked above
 			: deriveSlugFromSiteName(siteName);
 		// Use a name derived from the default slug when configured
 		const effectiveSiteName = useDefaultSite
-			? deriveSiteNameFromSlug(defaultSiteSlug)
+			? deriveSiteNameFromSlug(defaultSiteSlug!) // Safe: checked above
 			: siteName;
 		const newSiteUrlParams = {
 			searchParams: parseSearchParams(
@@ -353,39 +353,6 @@ export function setTemporarySiteSpec(
 				(site) => site.slug === defaultSiteSlug
 			);
 			if (existingDefaultSite) {
-				// For existing sites, use a boot blueprint (e.g., just login)
-				if (bootBlueprintUrl) {
-					try {
-						const response = await fetch(bootBlueprintUrl);
-						if (response.ok) {
-							const bootBlueprint = await response.json();
-							// Update the site's blueprint in redux (not persisted to OPFS)
-							dispatch(
-								sitesSlice.actions.updateSite({
-									id: existingDefaultSite.slug,
-									changes: {
-										metadata: {
-											...existingDefaultSite.metadata,
-											originalBlueprint: bootBlueprint,
-										},
-									},
-								})
-							);
-							return {
-								...existingDefaultSite,
-								metadata: {
-									...existingDefaultSite.metadata,
-									originalBlueprint: bootBlueprint,
-								},
-							};
-						}
-					} catch (e) {
-						logger.warn(
-							'[setTemporarySiteSpec] Failed to fetch boot blueprint:',
-							e
-						);
-					}
-				}
 				return existingDefaultSite;
 			}
 		}
@@ -541,6 +508,12 @@ export interface SiteMetadata {
 	//       For a user, timestamps might be useful to disambiguate identically-named sites.
 	//       For playground, we might choose to sort by most recently used.
 	//whenLastLoaded: number;
+
+	/**
+	 * The last URL the user visited in this site.
+	 * Used to restore the user's position when returning to a persistent site.
+	 */
+	lastUrl?: string;
 
 	// @TODO: Accept any string as a php version?
 	runtimeConfiguration: RuntimeConfiguration;
