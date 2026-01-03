@@ -26,7 +26,12 @@ import {
 	setGitHubAuthRepoUrl,
 } from './slice-ui';
 import type { PlaygroundDispatch, PlaygroundReduxState } from './store';
-import { selectSiteBySlug, updateSiteMetadata } from './slice-sites';
+import {
+	selectSiteBySlug,
+	updateSiteMetadata,
+	selectPendingUrlBlueprint,
+	setPendingUrlBlueprint,
+} from './slice-sites';
 // @ts-ignore
 import { corsProxyUrl } from 'virtual:cors-proxy-url';
 import { modalSlugs } from './slice-ui';
@@ -114,6 +119,11 @@ export function bootSiteClient(
 
 		logTrackingEvent('load');
 
+		// Check for pending URL blueprint to merge into boot
+		const pendingBlueprint = selectPendingUrlBlueprint(getState());
+		const hasPendingBlueprint =
+			pendingBlueprint && pendingBlueprint.siteSlug === site.slug;
+
 		let blueprint: Blueprint;
 		if (isWordPressInstalled) {
 			// For persisted sites, use runtime config and restore the user's last position
@@ -135,6 +145,23 @@ export function bootSiteClient(
 					landingPage: site.metadata.lastUrl,
 				}),
 			};
+
+			// Merge pending URL blueprint (e.g., ?plugin=friends) into boot blueprint
+			// so the plugin installation shows on the boot screen
+			if (hasPendingBlueprint) {
+				const pending = pendingBlueprint.blueprint;
+				blueprint = {
+					...blueprint,
+					plugins: [
+						...((blueprint as any).plugins || []),
+						...((pending as any).plugins || []),
+					],
+					steps: [
+						...((blueprint as any).steps || []),
+						...((pending as any).steps || []),
+					],
+				};
+			}
 		} else {
 			blueprint = site.metadata.originalBlueprint;
 		}
@@ -288,6 +315,15 @@ export function bootSiteClient(
 				);
 			}
 		});
+
+		// Clear pending blueprint and URL params after successful boot
+		// (the blueprint was already merged into boot above)
+		if (hasPendingBlueprint) {
+			dispatch(setPendingUrlBlueprint(null));
+			const url = new URL(window.location.href);
+			url.search = '';
+			window.history.replaceState({}, '', url.toString());
+		}
 
 		signal.onabort = null;
 	};

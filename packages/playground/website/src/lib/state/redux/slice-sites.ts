@@ -52,10 +52,17 @@ const sitesAdapter = createEntityAdapter<SiteInfo, string>({
 	sortComparer: (a, b) => a.slug.localeCompare(b.slug),
 });
 
+// Pending blueprint to apply to an existing site after it boots
+export interface PendingUrlBlueprint {
+	siteSlug: string;
+	blueprint: BlueprintV1;
+}
+
 // Define the initial state using the adapter and include the loading state
 const initialState = sitesAdapter.getInitialState({
 	opfsSitesLoadingState: 'loading' as LoadingState,
 	firstTemporarySiteCreated: false,
+	pendingUrlBlueprint: null as PendingUrlBlueprint | null,
 });
 
 // Create the slice
@@ -93,6 +100,12 @@ const sitesSlice = createSlice({
 		},
 		setFirstTemporarySiteCreated: (state) => {
 			state.firstTemporarySiteCreated = true;
+		},
+		setPendingUrlBlueprint: (
+			state,
+			action: PayloadAction<PendingUrlBlueprint | null>
+		) => {
+			state.pendingUrlBlueprint = action.payload;
 		},
 	},
 });
@@ -353,6 +366,27 @@ export function setTemporarySiteSpec(
 				(site) => site.slug === defaultSiteSlug
 			);
 			if (existingDefaultSite) {
+				// Check if there are actionable URL params that should be applied
+				// to the existing site (e.g., ?plugin=friends)
+				if (hasActionableUrlParams(playgroundUrlWithQueryApiArgs)) {
+					try {
+						const resolvedBlueprint = await resolveBlueprintFromURL(
+							playgroundUrlWithQueryApiArgs,
+							undefined // No default blueprint - just URL params
+						);
+						dispatch(
+							sitesSlice.actions.setPendingUrlBlueprint({
+								siteSlug: existingDefaultSite.slug,
+								blueprint: resolvedBlueprint.blueprint,
+							})
+						);
+					} catch (e) {
+						logger.error(
+							'Error resolving URL blueprint for existing site:',
+							e
+						);
+					}
+				}
 				return existingDefaultSite;
 			}
 		}
@@ -473,6 +507,25 @@ function parseSearchParams(searchParams: URLSearchParams) {
 }
 
 /**
+ * Check if the URL contains actionable parameters that should be applied
+ * as a blueprint to an existing persistent site.
+ */
+function hasActionableUrlParams(url: URL): boolean {
+	const query = url.searchParams;
+	return !!(
+		query.has('plugin') ||
+		query.has('theme') ||
+		query.has('blueprint-url') ||
+		query.has('import-site') ||
+		query.has('import-wxr') ||
+		query.has('import-content') ||
+		query.has('gutenberg-pr') ||
+		query.has('gutenberg-branch') ||
+		query.has('core-pr')
+	);
+}
+
+/**
  * The supported site storage types.
  *
  * Is it possible to restrict this to those three values for all Playground runtimes?
@@ -533,7 +586,12 @@ export interface SiteMetadata {
 	originalBlueprintSource: BlueprintSource;
 }
 
-export const { setOPFSSitesLoadingState } = sitesSlice.actions;
+export const { setOPFSSitesLoadingState, setPendingUrlBlueprint } =
+	sitesSlice.actions;
+
+export const selectPendingUrlBlueprint = (state: {
+	sites: ReturnType<typeof sitesSlice.reducer>;
+}) => state.sites.pendingUrlBlueprint;
 export { sitesSlice };
 
 export const {
