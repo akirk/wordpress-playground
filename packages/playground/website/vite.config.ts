@@ -43,8 +43,18 @@ export default defineConfig(({ command, mode }) => {
 		'CORS_PROXY_URL' in process.env
 			? process.env.CORS_PROXY_URL
 			: mode === 'production'
-			? 'https://wordpress-playground-cors-proxy.net/?'
-			: '/cors-proxy/?';
+				? 'https://wordpress-playground-cors-proxy.net/?'
+				: '/cors-proxy/?';
+
+	const defaultBlueprintUrl =
+		'DEFAULT_BLUEPRINT_URL' in process.env
+			? process.env.DEFAULT_BLUEPRINT_URL
+			: 'https://raw.githubusercontent.com/WordPress/blueprints/refs/heads/trunk/blueprints/welcome/blueprint.json';
+
+	const defaultStorageType =
+		'DEFAULT_STORAGE_TYPE' in process.env
+			? process.env.DEFAULT_STORAGE_TYPE
+			: 'none';
 
 	return {
 		// Split traffic from this server on dev so that the iframe content and
@@ -114,6 +124,12 @@ export default defineConfig(({ command, mode }) => {
 				name: 'cors-proxy-url',
 				content: `
 				export const corsProxyUrl = ${JSON.stringify(corsProxyUrl || undefined)};`,
+			}),
+			virtualModule({
+				name: 'website-defaults',
+				content: `
+				export const defaultBlueprintUrl = ${JSON.stringify(defaultBlueprintUrl || undefined)};
+				export const defaultStorageType = ${JSON.stringify(defaultStorageType || 'none')};`,
 			}),
 			// GitHub OAuth flow
 			{
