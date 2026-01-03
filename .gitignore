@@ -3,6 +3,8 @@
 # compiled output
 .nx
 /dist
+graph.json
+packages/playground/website/dist/
 tmp
 var
 /out-tsc

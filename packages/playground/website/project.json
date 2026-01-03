@@ -27,7 +27,7 @@
 				"cwd": "dist/packages/playground",
 				"parallel": false
 			},
-			"dependsOn": ["build:standalone", "^build"]
+			"dependsOn": ["build:standalone"]
 		},
 		"build:standalone": {
 			"executor": "@nx/vite:build",
@@ -56,6 +56,12 @@
 				"^build",
 				"playground-blueprints:build:blueprint-schema"
 			]
+		},
+		"build:persistent": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "bash packages/playground/website/build-persistent.sh"
+			}
 		},
 		"dev": {
 			"executor": "nx:run-commands",
