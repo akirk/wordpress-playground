@@ -116,6 +116,9 @@ export function bootSiteClient(
 
 		let blueprint: Blueprint;
 		if (isWordPressInstalled) {
+			// For persisted sites, use runtime config but preserve login/landingPage
+			// from the original blueprint (e.g., boot blueprint for returning users)
+			const originalBlueprint = site.metadata.originalBlueprint as any;
 			blueprint = {
 				preferredVersions: {
 					php: site.metadata.runtimeConfiguration.phpVersion,
@@ -128,6 +131,13 @@ export function bootSiteClient(
 				extraLibraries: site.metadata.runtimeConfiguration
 					.extraLibraries as any[],
 				constants: site.metadata.runtimeConfiguration.constants,
+				// Preserve login and landingPage for boot blueprints
+				...(originalBlueprint?.login !== undefined && {
+					login: originalBlueprint.login,
+				}),
+				...(originalBlueprint?.landingPage !== undefined && {
+					landingPage: originalBlueprint.landingPage,
+				}),
 			};
 		} else {
 			blueprint = site.metadata.originalBlueprint;

@@ -10,6 +10,7 @@ import { viteIgnoreImports } from '../../vite-extensions/vite-ignore-imports';
 import {
 	websiteDevServerHost,
 	websiteDevServerPort,
+	persistentWebsiteDevServerPort,
 	remoteDevServerHost,
 	remoteDevServerPort,
 	websiteExtrasDevServerHost,
@@ -56,6 +57,22 @@ export default defineConfig(({ command, mode }) => {
 			? process.env.DEFAULT_STORAGE_TYPE
 			: 'none';
 
+	const defaultSiteSlug =
+		'DEFAULT_SITE_SLUG' in process.env
+			? process.env.DEFAULT_SITE_SLUG
+			: undefined;
+
+	// Blueprint to use when booting an existing persisted site (e.g., just login)
+	const bootBlueprintUrl =
+		'BOOT_BLUEPRINT_URL' in process.env
+			? process.env.BOOT_BLUEPRINT_URL
+			: undefined;
+
+	const devServerPort =
+		defaultStorageType === 'opfs'
+			? persistentWebsiteDevServerPort
+			: websiteDevServerPort;
+
 	return {
 		// Split traffic from this server on dev so that the iframe content and
 		// outer content can be served from the same origin. In production it's
@@ -65,7 +82,10 @@ export default defineConfig(({ command, mode }) => {
 
 		assetsInclude: ['**/*.so', '**/*.dat'],
 
-		cacheDir: '../../../node_modules/.vite/packages-playground-website',
+		cacheDir:
+			defaultStorageType === 'opfs'
+				? '../../../node_modules/.vite/packages-playground-website-persistent'
+				: '../../../node_modules/.vite/packages-playground-website',
 
 		css: {
 			modules: {
@@ -74,13 +94,13 @@ export default defineConfig(({ command, mode }) => {
 		},
 
 		preview: {
-			port: websiteDevServerPort,
+			port: devServerPort,
 			host: websiteDevServerHost,
 			proxy,
 		},
 
 		server: {
-			port: websiteDevServerPort,
+			port: devServerPort,
 			host: websiteDevServerHost,
 			allowedHosts: ['playground.test', 'playground-preview.test'],
 			proxy: {
@@ -97,11 +117,13 @@ export default defineConfig(({ command, mode }) => {
 				// Proxy requests to the website-extras
 				'^/website-extras/': {
 					target: `http://${websiteExtrasDevServerHost}:${websiteExtrasDevServerPort}`,
+					changeOrigin: true,
 				},
 				// Proxy requests to the remote content through this server for dev
 				// builds. See base config below.
 				'^[/]((?!website-server).)': {
 					target: `http://${remoteDevServerHost}:${remoteDevServerPort}`,
+					changeOrigin: true,
 				},
 			},
 			fs: {
@@ -129,13 +151,23 @@ export default defineConfig(({ command, mode }) => {
 				name: 'website-defaults',
 				content: `
 				export const defaultBlueprintUrl = ${JSON.stringify(defaultBlueprintUrl || undefined)};
-				export const defaultStorageType = ${JSON.stringify(defaultStorageType || 'none')};`,
+				export const defaultStorageType = ${JSON.stringify(defaultStorageType || 'none')};
+				export const defaultSiteSlug = ${JSON.stringify(defaultSiteSlug || undefined)};
+				export const bootBlueprintUrl = ${JSON.stringify(bootBlueprintUrl || undefined)};`,
 			}),
-			// GitHub OAuth flow
+			// GitHub OAuth flow and server identification
 			{
 				name: 'configure-server',
 				configureServer(server: ViteDevServer) {
 					server.middlewares.use(oAuthMiddleware);
+					const serverType =
+						defaultStorageType === 'opfs'
+							? 'Persistent Playground'
+							: 'Temporary Playground';
+					server.printUrls = () => {
+						const url = `http://${websiteDevServerHost}:${devServerPort}/website-server/`;
+						console.log(`  ${serverType}: \x1b[36m${url}\x1b[0m`);
+					};
 				},
 			},
 			/**

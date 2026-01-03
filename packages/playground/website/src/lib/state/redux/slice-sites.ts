@@ -28,6 +28,8 @@ import { findFirewallErrorInCauseChain } from './error-utils';
 import {
 	defaultBlueprintUrl,
 	defaultStorageType,
+	defaultSiteSlug,
+	bootBlueprintUrl,
 } from 'virtual:website-defaults';
 
 /**
@@ -259,7 +261,15 @@ export function setTemporarySiteSpec(
 		dispatch: PlaygroundDispatch,
 		getState: () => PlaygroundReduxState
 	) => {
-		const siteSlug = deriveSlugFromSiteName(siteName);
+		// Use the configured default slug for persistent storage, or derive from name
+		const useDefaultSite = defaultSiteSlug && defaultStorageType !== 'none';
+		const siteSlug = useDefaultSite
+			? defaultSiteSlug
+			: deriveSlugFromSiteName(siteName);
+		// Use a name derived from the default slug when configured
+		const effectiveSiteName = useDefaultSite
+			? deriveSiteNameFromSlug(defaultSiteSlug)
+			: siteName;
 		const newSiteUrlParams = {
 			searchParams: parseSearchParams(
 				playgroundUrlWithQueryApiArgs.searchParams
@@ -276,7 +286,7 @@ export function setTemporarySiteSpec(
 				slug: siteSlug,
 				originalUrlParams: newSiteUrlParams,
 				metadata: {
-					name: siteName,
+					name: effectiveSiteName,
 					id: crypto.randomUUID(),
 					whenCreated: Date.now(),
 					storage: 'none' as const,
@@ -336,6 +346,49 @@ export function setTemporarySiteSpec(
 		}
 
 		const sites = getState().sites.entities;
+
+		// When a default site slug is configured, check if it already exists and reuse it
+		if (defaultSiteSlug && defaultStorageType !== 'none') {
+			const existingDefaultSite = Object.values(sites).find(
+				(site) => site.slug === defaultSiteSlug
+			);
+			if (existingDefaultSite) {
+				// For existing sites, use a boot blueprint (e.g., just login)
+				if (bootBlueprintUrl) {
+					try {
+						const response = await fetch(bootBlueprintUrl);
+						if (response.ok) {
+							const bootBlueprint = await response.json();
+							// Update the site's blueprint in redux (not persisted to OPFS)
+							dispatch(
+								sitesSlice.actions.updateSite({
+									id: existingDefaultSite.slug,
+									changes: {
+										metadata: {
+											...existingDefaultSite.metadata,
+											originalBlueprint: bootBlueprint,
+										},
+									},
+								})
+							);
+							return {
+								...existingDefaultSite,
+								metadata: {
+									...existingDefaultSite.metadata,
+									originalBlueprint: bootBlueprint,
+								},
+							};
+						}
+					} catch (e) {
+						logger.warn(
+							'[setTemporarySiteSpec] Failed to fetch boot blueprint:',
+							e
+						);
+					}
+				}
+				return existingDefaultSite;
+			}
+		}
 
 		// Check if there's an existing persistent site with matching URL params
 		// (when using persistent default storage, we want to reuse existing sites)
@@ -407,7 +460,7 @@ export function setTemporarySiteSpec(
 				slug: siteSlug,
 				originalUrlParams: newSiteUrlParams,
 				metadata: {
-					name: siteName,
+					name: effectiveSiteName,
 					id: crypto.randomUUID(),
 					whenCreated: Date.now(),
 					storage: storageType,

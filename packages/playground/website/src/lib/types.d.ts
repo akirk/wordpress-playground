@@ -11,4 +11,6 @@ declare module 'virtual:cors-proxy-url' {
 declare module 'virtual:website-defaults' {
 	export const defaultBlueprintUrl: string | undefined;
 	export const defaultStorageType: 'none' | 'opfs' | 'local-fs';
+	export const defaultSiteSlug: string | undefined;
+	export const bootBlueprintUrl: string | undefined;
 }

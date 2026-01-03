@@ -57,7 +57,8 @@
 					"nx run playground-php-cors-proxy:start",
 					"nx dev playground-remote --configuration=development-for-website",
 					"nx dev playground-website-extras --configuration=development-for-website",
-					"sleep 1; nx dev:standalone playground-website --hmr --output-style=stream-without-prefixes"
+					"sleep 1; nx dev:standalone playground-website --hmr --output-style=stream-without-prefixes",
+					"sleep 5; DEFAULT_STORAGE_TYPE=opfs DEFAULT_SITE_SLUG=default BOOT_BLUEPRINT_URL=/website-server/blueprints/boot.json nx dev:standalone playground-website --hmr --output-style=stream-without-prefixes"
 				],
 				"parallel": true,
 				"color": true
