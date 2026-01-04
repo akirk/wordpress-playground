@@ -78,6 +78,18 @@ export async function resolveBlueprintFromURL(
 		!fragment.length &&
 		defaultBlueprint
 	) {
+		// For local blueprints, fetch and parse directly
+		if (defaultBlueprint.startsWith('/')) {
+			const response = await fetch(defaultBlueprint);
+			const blueprint = await response.json();
+			return {
+				blueprint,
+				source: {
+					type: 'remote-url',
+					url: defaultBlueprint,
+				},
+			};
+		}
 		return {
 			blueprint: await resolveRemoteBlueprint(defaultBlueprint),
 			source: {
