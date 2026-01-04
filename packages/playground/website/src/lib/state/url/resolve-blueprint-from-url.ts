@@ -82,6 +82,12 @@ export async function resolveBlueprintFromURL(
 		if (defaultBlueprint.startsWith('/')) {
 			const response = await fetch(defaultBlueprint);
 			const blueprint = await response.json();
+			// Resolve relative URLs in the blueprint
+			const blueprintUrl = new URL(
+				defaultBlueprint,
+				window.location.origin
+			);
+			resolveRelativeUrls(blueprint, blueprintUrl.href);
 			return {
 				blueprint,
 				source: {
@@ -362,4 +368,35 @@ function applyQueryOverridesToDeclaration(
 	}
 
 	return blueprint;
+}
+
+/**
+ * Recursively resolves relative URLs in a blueprint object.
+ * Finds all { resource: "url", url: "./..." } and converts to absolute URLs.
+ */
+function resolveRelativeUrls(obj: any, baseUrl: string): void {
+	if (!obj || typeof obj !== 'object') {
+		return;
+	}
+
+	if (Array.isArray(obj)) {
+		for (const item of obj) {
+			resolveRelativeUrls(item, baseUrl);
+		}
+		return;
+	}
+
+	// Check if this is a URL resource with a relative path
+	if (
+		obj.resource === 'url' &&
+		typeof obj.url === 'string' &&
+		(obj.url.startsWith('./') || obj.url.startsWith('../'))
+	) {
+		obj.url = new URL(obj.url, baseUrl).href;
+	}
+
+	// Recurse into all properties
+	for (const key of Object.keys(obj)) {
+		resolveRelativeUrls(obj[key], baseUrl);
+	}
 }

@@ -9,7 +9,18 @@
 		{
 			"step": "writeFile",
 			"path": "/wordpress/wp-content/plugins/playground-welcome/playground-welcome.php",
-			"data": "<?php\n/**\n * Plugin Name: Playground Welcome\n */\nadd_action('admin_menu', function() {\n\tadd_menu_page('Welcome', 'Welcome', 'manage_options', 'playground-welcome', function() {\n\t\techo '<div class=\"wrap\"><h1>Welcome to WordPress Playground!</h1><p>Your persistent WordPress site is ready.</p></div>';\n\t}, 'dashicons-welcome-more', 3);\n});"
+			"data": {
+				"resource": "url",
+				"url": "../plugins/playground-welcome/playground-welcome.php"
+			}
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/plugins/playground-welcome/playground-welcome.css",
+			"data": {
+				"resource": "url",
+				"url": "../plugins/playground-welcome/playground-welcome.css"
+			}
 		},
 		{
 			"step": "activatePlugin",
