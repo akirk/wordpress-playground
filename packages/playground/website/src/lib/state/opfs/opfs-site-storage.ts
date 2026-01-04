@@ -197,6 +197,33 @@ async function metadataToStoredFormat(
 function storedFormatToMetadata(data: string) {
 	const { slug, ...metadata } = JSON.parse(data) as StoredSiteMetadata;
 
+	// Handle corrupted or incomplete metadata with sensible defaults
+	if (!metadata.runtimeConfiguration) {
+		metadata.runtimeConfiguration = {
+			phpVersion: RecommendedPHPVersion,
+			wpVersion: 'latest',
+			intl: false,
+			networking: true,
+			extraLibraries: [],
+			constants: {},
+		};
+	}
+	if (!metadata.storage) {
+		metadata.storage = 'opfs';
+	}
+	if (!metadata.id) {
+		metadata.id = crypto.randomUUID();
+	}
+	if (!metadata.name) {
+		metadata.name = slug || 'Playground';
+	}
+	if (!metadata.originalBlueprint) {
+		metadata.originalBlueprint = {};
+	}
+	if (!metadata.originalBlueprintSource) {
+		metadata.originalBlueprintSource = { type: 'none' };
+	}
+
 	/**
 	 * Migrate the legacy runtimeConfiguration data format to the new, flat one.
 	 */
