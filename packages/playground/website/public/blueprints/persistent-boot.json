@@ -1,0 +1,20 @@
+{
+	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
+	"landingPage": "/wp-admin/admin.php?page=playground-welcome",
+	"steps": [
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "git:directory",
+				"url": "https://github.com/akirk/playground-welcome",
+				"ref": "HEAD"
+			},
+			"options": {
+				"activate": true
+			},
+			"progress": {
+				"caption": "Installing plugin from GitHub: akirk/playground-welcome"
+			}
+		}
+	]
+}
