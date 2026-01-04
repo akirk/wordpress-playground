@@ -12,12 +12,17 @@ import {
 import { logBlueprintEvents, logTrackingEvent } from '../../tracking';
 import {
 	type Blueprint,
+	type StepDefinition,
 	BlueprintFilesystemRequiredError,
 	InvalidBlueprintError,
 } from '@wp-playground/blueprints';
 import { logger } from '@php-wasm/logger';
 import { setupPostMessageRelay } from '@php-wasm/web';
-import { startPlaygroundWeb } from '@wp-playground/client';
+import {
+	startPlaygroundWeb,
+	resolveRemoteBlueprint,
+	getBlueprintDeclaration,
+} from '@wp-playground/client';
 import type { PlaygroundClient } from '@wp-playground/remote';
 import { getRemoteUrl } from '../../config';
 import {
@@ -119,10 +124,62 @@ export function bootSiteClient(
 
 		logTrackingEvent('load');
 
-		// Check for pending URL blueprint to merge into boot
+		// Check for pending URL blueprint from redux (set by resolveSiteFromUrl)
 		const pendingBlueprint = selectPendingUrlBlueprint(getState());
 		const hasPendingBlueprint =
 			pendingBlueprint && pendingBlueprint.siteSlug === site.slug;
+
+		// Also check if there's a blueprint-url parameter to apply additional steps
+		// (handles base64 data URLs that may not go through resolveSiteFromUrl)
+		const urlParams = new URLSearchParams(window.location.search);
+		const blueprintUrl = urlParams.get('blueprint-url');
+		let additionalSteps: StepDefinition[] = [];
+		let additionalLandingPage: string | undefined;
+
+		if (blueprintUrl && isWordPressInstalled) {
+			try {
+				let blueprintDeclaration;
+
+				// Check if it's a base64 data URL
+				if (blueprintUrl.startsWith('data:application/json;base64,')) {
+					const base64Data = blueprintUrl.replace(
+						'data:application/json;base64,',
+						''
+					);
+					// Decode base64 to UTF-8 string
+					const decoded = decodeURIComponent(
+						atob(base64Data)
+							.split('')
+							.map(
+								(c) =>
+									'%' +
+									('00' + c.charCodeAt(0).toString(16)).slice(
+										-2
+									)
+							)
+							.join('')
+					);
+					blueprintDeclaration = JSON.parse(decoded);
+				} else {
+					// Fetch from remote URL
+					const blueprintBundle =
+						await resolveRemoteBlueprint(blueprintUrl);
+					blueprintDeclaration =
+						await getBlueprintDeclaration(blueprintBundle);
+				}
+
+				additionalSteps = (blueprintDeclaration.steps ||
+					[]) as StepDefinition[];
+				additionalLandingPage = blueprintDeclaration.landingPage;
+				// Clear the blueprint-url from the URL after reading it
+				urlParams.delete('blueprint-url');
+				const newUrl = new URL(window.location.href);
+				newUrl.search = urlParams.toString();
+				window.history.replaceState({}, '', newUrl.toString());
+			} catch (e) {
+				logger.error('Failed to process blueprint:', e);
+			}
+		}
 
 		let blueprint: Blueprint;
 		if (isWordPressInstalled) {
@@ -141,9 +198,14 @@ export function bootSiteClient(
 				constants: site.metadata.runtimeConfiguration.constants,
 				// Auto-login and restore the user's last position
 				login: true,
-				...(site.metadata.lastUrl && {
-					landingPage: site.metadata.lastUrl,
-				}),
+				// Use additional landing page if present, otherwise restore last URL (only if no additional steps)
+				landingPage:
+					additionalLandingPage ||
+					(additionalSteps.length === 0
+						? site.metadata.lastUrl
+						: undefined),
+				// Include additional steps from blueprint if present
+				...(additionalSteps.length > 0 && { steps: additionalSteps }),
 			};
 
 			// Merge pending URL blueprint (e.g., ?plugin=friends) into boot blueprint
