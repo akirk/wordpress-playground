@@ -848,8 +848,13 @@
 	transition: all 0.15s ease;
 }
 
-.dangerButton:hover {
+.dangerButton:hover:not(:disabled) {
 	background: rgba(220, 38, 38, 0.1);
+}
+
+.dangerButton:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
 }
 
 .dangerButton svg {
