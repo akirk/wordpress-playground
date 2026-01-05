@@ -17,6 +17,7 @@ class Playground_Welcome {
 
     public function __construct() {
         add_action('admin_menu', [$this, 'add_admin_page']);
+        add_action('admin_init', [$this, 'maybe_redirect_to_welcome']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_styles']);
         add_action('wp_ajax_playground_welcome_save', [$this, 'handle_save']);
     }
@@ -31,6 +32,24 @@ class Playground_Welcome {
             'dashicons-welcome-learn-more',
             2
         );
+    }
+
+    public function maybe_redirect_to_welcome() {
+        if (get_option($this->option_name)) {
+            return;
+        }
+
+        global $pagenow;
+        if ($pagenow === 'admin.php' && isset($_GET['page']) && $_GET['page'] === 'playground-welcome') {
+            return;
+        }
+
+        if (defined('DOING_AJAX') && DOING_AJAX) {
+            return;
+        }
+
+        wp_redirect(admin_url('admin.php?page=playground-welcome'));
+        exit;
     }
 
     public function enqueue_styles($hook) {
@@ -51,8 +70,8 @@ class Playground_Welcome {
         ?>
         <div class="playground-welcome-overlay">
             <div class="playground-welcome-dialog">
-                <h1>👋 Welcome to WordPress Playground</h1>
-                <p class="intro">Let's personalize your experience and add some content to get you started.</p>
+                <h1>👋 Welcome to this special version of WordPress Playground</h1>
+                <p class="intro">While it runs in the browser, it behaves like a traditional WordPress site: Your changes are saved automatically and will be here when you come back. Let's personalize your experience and import some content if you want.</p>
 
                 <form id="playground-welcome-form" method="post">
                     <?php wp_nonce_field('playground_welcome_nonce', 'nonce'); ?>
@@ -193,12 +212,12 @@ class Playground_Welcome {
             $import_result = $this->import_feed($feed_url, $max_items);
             if ($import_result['success']) {
                 $messages[] = $import_result['message'];
-                $this->delete_hello_world_post();
+                $this->update_hello_world_post();
             } else {
                 wp_send_json_error(['message' => $import_result['message']]);
             }
         } else {
-            $this->delete_hello_world_post();
+            $this->update_hello_world_post();
         }
 
         update_option($this->option_name, true);
@@ -210,16 +229,71 @@ class Playground_Welcome {
         wp_send_json_success(['message' => $final_message]);
     }
 
-    private function delete_hello_world_post() {
-        $hello_world = get_page_by_path('hello-world', OBJECT, 'post');
-        if ($hello_world) {
-            wp_delete_post($hello_world->ID, true);
+    private function update_hello_world_post() {
+        $post = get_page_by_path('hello-world', OBJECT, 'post');
+        if (!$post) {
+            $post = get_post(1);
+            if (!$post || $post->post_title !== 'Hello world!') {
+                return;
+            }
         }
 
-        $post_one = get_post(1);
-        if ($post_one && $post_one->post_title === 'Hello world!') {
-            wp_delete_post(1, true);
-        }
+        $content = '<!-- wp:paragraph -->
+<p>Welcome to this special version of WordPress Playground: While it runs in the browser, it behaves like a traditional WordPress site: Your changes are saved automatically and will be here when you come back.</p>
+<!-- /wp:paragraph -->
+
+<!-- wp:heading -->
+<h2 class="wp-block-heading">What can you do here?</h2>
+<!-- /wp:heading -->
+
+<!-- wp:list -->
+<ul class="wp-block-list">
+<li><strong>Build your own site</strong> — Create posts, pages, and customize your theme. This is your personal space to make whatever you want.</li>
+<li><strong>Learn WordPress</strong> — Experiment with settings, try different themes, and explore how WordPress works without any risk.</li>
+<li><strong>Add features</strong> — Install plugins to extend your site with new capabilities like contact forms, galleries, or SEO tools.</li>
+<li><strong>Import content</strong> — Bring in posts from any RSS feed to populate your site with content.</li>
+</ul>
+<!-- /wp:list -->
+
+<!-- wp:heading -->
+<h2 class="wp-block-heading">Things to know</h2>
+<!-- /wp:heading -->
+
+<!-- wp:list -->
+<ul class="wp-block-list">
+<li><strong>It\'s bound to this browser</strong> — Your Playground lives in this browser\'s storage, so you can\'t access it from other devices. This makes it a very private space.</li>
+<li><strong>Back up your work</strong> — Use the backup feature in the top menu to save your site. This lets you restore it in another browser or protect against browser storage loss.</li>
+<li><strong>Ready to go bigger?</strong> — You can move your Playground to dedicated WordPress hosting whenever you want to share it with the world.</li>
+</ul>
+<!-- /wp:list -->
+
+<!-- wp:heading -->
+<h2 class="wp-block-heading">The top menu</h2>
+<!-- /wp:heading -->
+
+<!-- wp:paragraph -->
+<p>Look for the grid icon (<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" width="20" height="20" aria-hidden="true" focusable="false" style="vertical-align: middle;"><path d="M6 5.5h3a.5.5 0 01.5.5v3a.5.5 0 01-.5.5H6a.5.5 0 01-.5-.5V6a.5.5 0 01.5-.5zM4 6a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm11-.5h3a.5.5 0 01.5.5v3a.5.5 0 01-.5.5h-3a.5.5 0 01-.5-.5V6a.5.5 0 01.5-.5zM13 6a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2h-3a2 2 0 01-2-2V6zm5 8.5h-3a.5.5 0 00-.5.5v3a.5.5 0 00.5.5h3a.5.5 0 00.5-.5v-3a.5.5 0 00-.5-.5zM15 13a2 2 0 00-2 2v3a2 2 0 002 2h3a2 2 0 002-2v-3a2 2 0 00-2-2h-3zm-9 1.5h3a.5.5 0 01.5.5v3a.5.5 0 01-.5.5H6a.5.5 0 01-.5-.5v-3a.5.5 0 01.5-.5zM4 15a2 2 0 012-2h3a2 2 0 012 2v3a2 2 0 01-2 2H6a2 2 0 01-2-2v-3z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>) in the top bar. From there you can:</p>
+<!-- /wp:paragraph -->
+
+<!-- wp:list -->
+<ul class="wp-block-list">
+<li><strong>Add Features</strong> — Install plugins to make your WordPress more interesting</li>
+<li><strong>Backups</strong> — Save and restore your site</li>
+<li><strong>Delete everything</strong> — Start fresh if you want a clean slate</li>
+<li><strong>Visit playground.wordpress.net</strong> — Try the original ephemeral Playground for quick experiments</li>
+</ul>
+<!-- /wp:list -->
+
+<!-- wp:paragraph -->
+<p>Enjoy your Playground!</p>
+<!-- /wp:paragraph -->';
+
+        wp_update_post([
+            'ID' => $post->ID,
+            'post_title' => 'Welcome to Your Playground',
+            'post_content' => $content,
+            'post_name' => 'welcome-to-your-playground',
+        ]);
     }
 
     private function import_feed($feed_url, $max_items) {
