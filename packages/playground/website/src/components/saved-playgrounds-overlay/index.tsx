@@ -42,6 +42,8 @@ import {
 import { WordPressIcon } from '@wp-playground/components';
 import useFetch from '../../lib/hooks/use-fetch';
 import { PlaygroundRoute, redirectTo } from '../../lib/state/url/router';
+import { defaultStorageType } from 'virtual:website-defaults';
+import { PersistentPlaygroundOverlay } from './persistent-playground-overlay';
 
 type BlueprintsIndexEntry = {
 	title: string;
@@ -101,6 +103,11 @@ function PlaygroundLogo() {
 export function SavedPlaygroundsOverlay({
 	onClose,
 }: SavedPlaygroundsOverlayProps) {
+	// Use dedicated overlay for persistent playground mode
+	if (defaultStorageType === 'opfs') {
+		return <PersistentPlaygroundOverlay onClose={onClose} />;
+	}
+
 	const offline = useAppSelector((state) => state.ui.offline);
 	const storedSites = useAppSelector(selectSortedSites).filter(
 		(site) => site.metadata.storage !== 'none'
@@ -657,7 +664,6 @@ export function SavedPlaygroundsOverlay({
 				</HStack>
 
 				<div className={css.body}>
-					{/* Start a new Playground */}
 					<section className={css.section}>
 						<h2 className={css.sectionTitle}>
 							Start a new Playground
@@ -688,7 +694,6 @@ export function SavedPlaygroundsOverlay({
 						</div>
 					</section>
 
-					{/* Start from a Blueprint */}
 					<section className={css.section}>
 						<div className={css.sectionHeader}>
 							<h2 className={css.sectionTitle}>
@@ -767,7 +772,6 @@ export function SavedPlaygroundsOverlay({
 						)}
 					</section>
 
-					{/* Your Playgrounds */}
 					<section className={css.section}>
 						<h2 className={css.sectionTitle}>Your Playgrounds</h2>
 						<div className={css.sitesList}>
@@ -808,15 +812,6 @@ export function SavedPlaygroundsOverlay({
 							{storedSites.map((site) => {
 								const isSelected =
 									site.slug === activeSite?.slug;
-								// const hasClient = Boolean(
-								// 	selectClientInfoBySiteSlug(
-								// 		{
-								// 			clients:
-								// 				store.getState().clients,
-								// 		},
-								// 		site.slug
-								// 	)?.client
-								// );
 								return (
 									<div
 										key={site.slug}
@@ -891,20 +886,6 @@ export function SavedPlaygroundsOverlay({
 														>
 															Rename
 														</MenuItem>
-														{/* @TODO: Add download as .zip functionality for non-loaded sites */}
-														{/* <MenuItem
-																onClick={() =>
-																	handleDownloadSite(
-																		site.slug,
-																		closeMenu
-																	)
-																}
-																disabled={
-																	!hasClient
-																}
-															>
-																Download as .zip
-															</MenuItem> */}
 													</MenuGroup>
 													<MenuGroup>
 														<MenuItem

@@ -52,8 +52,11 @@ export default defineConfig(({ command, mode }) => {
 				? 'https://wordpress-playground-cors-proxy.net/?'
 				: '/cors-proxy/?';
 
-	const defaultBlueprintUrl =
-		'https://raw.githubusercontent.com/WordPress/blueprints/refs/heads/trunk/blueprints/welcome/blueprint.json';
+	const defaultBlueprintUrl = isPersistentMode
+		? isProductionBuild
+			? '/blueprints/persistent-boot.json'
+			: '/website-server/blueprints/persistent-boot.json'
+		: 'https://raw.githubusercontent.com/WordPress/blueprints/refs/heads/trunk/blueprints/welcome/blueprint.json';
 
 	const defaultStorageType = isPersistentMode ? 'opfs' : 'none';
 	const defaultSiteSlug = isPersistentMode ? 'default' : undefined;

@@ -19,6 +19,8 @@ import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
 import { SiteManagerIcon } from '@wp-playground/components';
 import { SavedPlaygroundsOverlay } from '../saved-playgrounds-overlay';
 import { SaveStatusIndicator } from './save-status-indicator';
+import { BackupStatusIndicator } from './backup-status-indicator';
+import { defaultStorageType } from 'virtual:website-defaults';
 
 interface BrowserChromeProps {
 	children?: React.ReactNode;
@@ -72,7 +74,11 @@ export default function BrowserChrome({
 					</div>
 
 					<div className={css.saveStatusSlot}>
-						<SaveStatusIndicator />
+						{defaultStorageType === 'opfs' ? (
+							<BackupStatusIndicator />
+						) : (
+							<SaveStatusIndicator />
+						)}
 					</div>
 
 					<div className={css.toolbarButtons}>
