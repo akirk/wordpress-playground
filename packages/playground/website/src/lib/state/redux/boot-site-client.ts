@@ -46,79 +46,6 @@ import {
 } from '../../../github/git-auth-helpers';
 import { findFirewallErrorInCauseChain } from './error-utils';
 
-/**
- * Query parameters that are handled by the Playground URL API.
- * Any parameters not in this list will be passed through to the landing page.
- */
-const KNOWN_QUERY_PARAMS = new Set([
-	// Blueprint/setup related
-	'blueprint-url',
-	'plugin',
-	'theme',
-	'import-site',
-	'import-wxr',
-	'import-content',
-	'php',
-	'wp',
-	'networking',
-	'language',
-	'multisite',
-	'login',
-	'url',
-	'core-pr',
-	'gutenberg-pr',
-	'gutenberg-branch',
-	// Site selection
-	'site-slug',
-	'if-stored-site-missing',
-	// UI/mode related
-	'modal',
-	'mode',
-	// GitHub export
-	'ghexport-repo-url',
-	'ghexport-content-type',
-	'ghexport-pr-action',
-	'ghexport-pr-number',
-	'ghexport-playground-root',
-	'ghexport-repo-root',
-	'ghexport-path',
-	'ghexport-commit-message',
-	'ghexport-plugin',
-	'ghexport-theme',
-	'ghexport-allow-include-zip',
-	'gh-ensure-auth',
-	// Experimental
-	'experimental-blueprints-v2-runner',
-]);
-
-/**
- * Extracts query parameters that are not known to the Playground URL API.
- * These unknown parameters will be passed through to the WordPress landing page.
- */
-function getUnknownQueryParams(urlParams: URLSearchParams): URLSearchParams {
-	const unknownParams = new URLSearchParams();
-	for (const [key, value] of urlParams.entries()) {
-		if (!KNOWN_QUERY_PARAMS.has(key)) {
-			unknownParams.append(key, value);
-		}
-	}
-	return unknownParams;
-}
-
-/**
- * Appends query parameters to a URL path.
- */
-function appendQueryParamsToUrl(
-	url: string | undefined,
-	params: URLSearchParams
-): string | undefined {
-	if (!url || params.size === 0) {
-		return url;
-	}
-	const separator = url.includes('?') ? '&' : '?';
-	return `${url}${separator}${params.toString()}`;
-}
-
 export function bootSiteClient(
 	siteSlug: string,
 	iframe: HTMLIFrameElement,
@@ -272,14 +199,11 @@ export function bootSiteClient(
 				// Auto-login and restore the user's last position
 				login: true,
 				// Use additional landing page if present, otherwise restore last URL (only if no additional steps)
-				// Append any unknown query parameters to the landing page so they reach WordPress
-				landingPage: appendQueryParamsToUrl(
+				landingPage:
 					additionalLandingPage ||
-						(additionalSteps.length === 0
-							? site.metadata.lastUrl
-							: undefined),
-					getUnknownQueryParams(urlParams)
-				),
+					(additionalSteps.length === 0
+						? site.metadata.lastUrl
+						: undefined),
 				// Include additional steps from blueprint if present
 				...(additionalSteps.length > 0 && { steps: additionalSteps }),
 			};
@@ -414,10 +338,6 @@ export function bootSiteClient(
 		}
 
 		setupPostMessageRelay(iframe, document.location.origin);
-
-		// Send the parent Playground URL to the service worker so WordPress
-		// can create links back to the Playground (e.g., for bookmarklets).
-		(playground as PlaygroundClient).setPlaygroundUrl(window.location.href);
 
 		dispatch(
 			addClientInfo({

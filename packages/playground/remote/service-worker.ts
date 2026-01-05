@@ -423,25 +423,6 @@ async function handleScopedRequest(event: FetchEvent, scope: string) {
 		});
 	}
 
-	// Inject the parent Playground URL into HTML responses so WordPress
-	// can create links back to the Playground (e.g., for bookmarklets).
-	const contentType = workerResponse.headers.get('content-type') || '';
-	if (contentType.includes('text/html') && scopeToParentUrl[scope]) {
-		const html = await workerResponse.text();
-		const playgroundUrlScript = `<script>window.playgroundUrl = ${JSON.stringify(scopeToParentUrl[scope])};</script>`;
-		// Inject after <head> if present, otherwise at the start
-		const injectedHtml = html.includes('<head>')
-			? html.replace('<head>', '<head>' + playgroundUrlScript)
-			: html.includes('<head >')
-				? html.replace(/<head\s[^>]*>/, '$&' + playgroundUrlScript)
-				: playgroundUrlScript + html;
-		return new Response(injectedHtml, {
-			status: workerResponse.status,
-			statusText: workerResponse.statusText,
-			headers: workerResponse.headers,
-		});
-	}
-
 	return workerResponse;
 }
 
@@ -572,8 +553,6 @@ type WPModuleDetails = {
 };
 
 const scopeToWpModule: Record<string, WPModuleDetails> = {};
-const scopeToParentUrl: Record<string, string> = {};
-
 async function getScopedWpDetails(scope: string): Promise<WPModuleDetails> {
 	if (!scopeToWpModule[scope]) {
 		const requestId = await broadcastMessageExpectReply(
@@ -649,11 +628,6 @@ const scopesWithCrossOriginIsolation = new Set<string>();
 self.addEventListener('message', (event) => {
 	if (event.data?.type === 'document-isolation-policy-support-check') {
 		browserSupportsDocumentIsolationPolicy = event.data.supported === true;
-	} else if (event.data?.type === 'set-playground-url') {
-		const { scope, url } = event.data;
-		if (scope && url) {
-			scopeToParentUrl[scope] = url;
-		}
 	}
 });
 

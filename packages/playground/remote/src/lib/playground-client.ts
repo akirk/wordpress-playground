@@ -47,13 +47,6 @@ export interface WebClientMixin extends ProgressReceiver {
 	setIframeSandboxFlags(flags: string[]): Promise<void>;
 
 	/**
-	 * Sets the parent Playground URL so WordPress can create links back to
-	 * the Playground (e.g., for bookmarklets).
-	 * @param url The parent Playground URL.
-	 */
-	setPlaygroundUrl(url: string): Promise<void>;
-
-	/**
 	 * The onDownloadProgress event listener.
 	 */
 	onDownloadProgress: PlaygroundWorkerEndpoint['onDownloadProgress'];
@@ -82,9 +75,8 @@ export interface WebClientMixin extends ProgressReceiver {
  * The Playground Client interface.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface PlaygroundClient extends RemoteAPI<
-	PlaygroundWorkerEndpoint & WebClientMixin
-> {}
+export interface PlaygroundClient
+	extends RemoteAPI<PlaygroundWorkerEndpoint & WebClientMixin> {}
 
 /*
  * Assert that PlaygroundClient is a superset of UniversalPHP.
