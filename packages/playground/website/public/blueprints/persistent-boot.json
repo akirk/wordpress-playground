@@ -3,18 +3,28 @@
 	"landingPage": "/wp-admin/admin.php?page=playground-welcome",
 	"steps": [
 		{
-			"step": "installPlugin",
-			"pluginData": {
-				"resource": "git:directory",
-				"url": "https://github.com/akirk/playground-welcome",
-				"ref": "HEAD"
-			},
-			"options": {
-				"activate": true
-			},
-			"progress": {
-				"caption": "Installing plugin from GitHub: akirk/playground-welcome"
+			"step": "mkdir",
+			"path": "/wordpress/wp-content/plugins/playground-welcome"
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/plugins/playground-welcome/playground-welcome.php",
+			"data": {
+				"resource": "url",
+				"url": "../plugins/playground-welcome/playground-welcome.php"
 			}
+		},
+		{
+			"step": "writeFile",
+			"path": "/wordpress/wp-content/plugins/playground-welcome/playground-welcome.css",
+			"data": {
+				"resource": "url",
+				"url": "../plugins/playground-welcome/playground-welcome.css"
+			}
+		},
+		{
+			"step": "activatePlugin",
+			"pluginPath": "playground-welcome/playground-welcome.php"
 		}
 	]
 }

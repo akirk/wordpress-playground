@@ -55,6 +55,41 @@ const pluginBlueprints: PluginBlueprint[] = [
 			},
 		},
 	},
+	{
+		title: 'Personal CRM',
+		description:
+			'Manage your contacts and relationships directly from WordPress',
+		blueprint: {
+			landingPage: '/wp-admin/plugins.php',
+			steps: [
+				{
+					step: 'unzip',
+					zipFile: {
+						resource: 'url',
+						url: 'https://alex.kirk.at/wp-content/uploads/sites/2/pcrm-beeper.zip',
+					},
+					extractToPath: '/wordpress/wp-content/plugins',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath: 'personal-crm/personal-crm.php',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath: 'keeping-contact/keeping-contact.php',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath:
+						'contact-sync-personal-crm/contact-sync-personal-crm.php',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath: 'a8c-team/a8c-team.php',
+				},
+			],
+		},
+	},
 ];
 
 function PlaygroundLogo() {
