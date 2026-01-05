@@ -95,6 +95,7 @@ const pluginBlueprints: PluginBlueprint[] = [
 		description:
 			'Use the Post Collection Plugin to save articles from around the web',
 		blueprint: {
+			landingPage: '/wp-admin/admin.php?page=post-collection-settings',
 			steps: [
 				{
 					step: 'unzip',
