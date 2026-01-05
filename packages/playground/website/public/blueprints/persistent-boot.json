@@ -40,7 +40,7 @@
 		},
 		{
 			"step": "runPHP",
-			"code": "<?php require '/wordpress/wp-load.php'; $theme = wp_get_theme(); $file = $theme->get_stylesheet_directory() . '/templates/home.html'; if (file_exists($file)) { $content = file_get_contents($file); $updated = str_replace('<!-- wp:pattern {\"slug\":\"twentytwentyfive/hidden-blog-heading\"} /-->', '', $content); if ($updated !== $content) { wp_insert_post(['post_type' => 'wp_template', 'post_name' => 'home', 'post_title' => 'Blog Home', 'post_content' => $updated, 'post_status' => 'publish', 'tax_input' => ['wp_theme' => [$theme->get_stylesheet()]]]); } }"
+			"code": "<?php require '/wordpress/wp-load.php'; $theme = wp_get_theme(); $file = $theme->get_stylesheet_directory() . '/templates/home.html'; if (file_exists($file)) { $content = file_get_contents($file); $updated = str_replace('<!-- wp:pattern {\"slug\":\"twentytwentyfive/hidden-blog-heading\"} /-->', '', $content); if ($updated !== $content) { $post_id = wp_insert_post(['post_type' => 'wp_template', 'post_name' => 'home', 'post_title' => 'Blog Home', 'post_content' => $updated, 'post_status' => 'publish']); if ($post_id) { wp_set_object_terms($post_id, $theme->get_stylesheet(), 'wp_theme'); } } }"
 		},
 		{
 			"step": "activatePlugin",
