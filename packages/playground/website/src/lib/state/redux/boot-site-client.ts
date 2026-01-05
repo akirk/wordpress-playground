@@ -133,6 +133,7 @@ export function bootSiteClient(
 		// (handles base64 data URLs that may not go through resolveSiteFromUrl)
 		const urlParams = new URLSearchParams(window.location.search);
 		const blueprintUrl = urlParams.get('blueprint-url');
+		const urlParamLandingPage = urlParams.get('url');
 		let additionalSteps: StepDefinition[] = [];
 		let additionalLandingPage: string | undefined;
 
@@ -198,8 +199,9 @@ export function bootSiteClient(
 				constants: site.metadata.runtimeConfiguration.constants,
 				// Auto-login and restore the user's last position
 				login: true,
-				// Use additional landing page if present, otherwise restore last URL (only if no additional steps)
+				// Use URL param or additional landing page if present, otherwise restore last URL (only if no additional steps)
 				landingPage:
+					urlParamLandingPage ||
 					additionalLandingPage ||
 					(additionalSteps.length === 0
 						? site.metadata.lastUrl

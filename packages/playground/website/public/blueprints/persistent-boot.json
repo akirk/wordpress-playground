@@ -23,6 +23,26 @@
 			}
 		},
 		{
+			"step": "mkdir",
+			"path": "/tmp"
+		},
+		{
+			"step": "writeFile",
+			"path": "/tmp/welcome-post.html",
+			"data": {
+				"resource": "url",
+				"url": "../plugins/playground-welcome/welcome-post.html"
+			}
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require '/wordpress/wp-load.php'; add_filter('wp_kses_allowed_html', function($tags) { $tags['svg'] = ['viewbox' => true, 'xmlns' => true, 'width' => true, 'height' => true, 'aria-hidden' => true, 'focusable' => true, 'style' => true]; $tags['path'] = ['d' => true, 'fill-rule' => true, 'clip-rule' => true]; return $tags; }, 10, 1); $post = get_post(1); if ($post) { wp_update_post(['ID' => $post->ID, 'post_title' => 'Welcome to Your WordPress', 'post_content' => file_get_contents('/tmp/welcome-post.html'), 'post_name' => 'welcome-to-your-wordpress']); }"
+		},
+		{
+			"step": "runPHP",
+			"code": "<?php require '/wordpress/wp-load.php'; $theme = wp_get_theme(); $file = $theme->get_stylesheet_directory() . '/templates/home.html'; if (file_exists($file)) { $content = file_get_contents($file); $updated = str_replace('<!-- wp:pattern {\"slug\":\"twentytwentyfive/hidden-blog-heading\"} /-->', '', $content); if ($updated !== $content) { wp_insert_post(['post_type' => 'wp_template', 'post_name' => 'home', 'post_title' => 'Blog Home', 'post_content' => $updated, 'post_status' => 'publish', 'tax_input' => ['wp_theme' => [$theme->get_stylesheet()]]]); } }"
+		},
+		{
 			"step": "activatePlugin",
 			"pluginPath": "playground-welcome/playground-welcome.php"
 		}
