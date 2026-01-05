@@ -60,7 +60,7 @@ const pluginBlueprints: PluginBlueprint[] = [
 		description:
 			'Manage your contacts and relationships directly from WordPress',
 		blueprint: {
-			landingPage: '/wp-admin/plugins.php',
+			landingPage: '/crm/welcome',
 			steps: [
 				{
 					step: 'unzip',
@@ -86,6 +86,31 @@ const pluginBlueprints: PluginBlueprint[] = [
 				{
 					step: 'activatePlugin',
 					pluginPath: 'a8c-team/a8c-team.php',
+				},
+			],
+		},
+	},
+	{
+		title: 'Collect Posts from the Web',
+		description:
+			'Use the Post Collection Plugin to save articles from around the web',
+		blueprint: {
+			steps: [
+				{
+					step: 'unzip',
+					zipFile: {
+						resource: 'url',
+						url: 'https://alex.kirk.at/wp-content/uploads/sites/2/post-collection.zip',
+					},
+					extractToPath: '/wordpress/wp-content/plugins',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath: 'post-collection/post-collection.php',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath: 'send-to-e-reader/send-to-e-reader.php',
 				},
 			],
 		},
@@ -124,6 +149,7 @@ export function PersistentPlaygroundOverlay({
 
 	const [isClosing, setIsClosing] = useState(false);
 	const [showDeleteButton, setShowDeleteButton] = useState(false);
+	const [isDeleting, setIsDeleting] = useState(false);
 
 	const handleKeyDown = useCallback(
 		(event: KeyboardEvent) => {
@@ -157,6 +183,7 @@ export function PersistentPlaygroundOverlay({
 			return;
 		}
 
+		setIsDeleting(true);
 		try {
 			await opfsSiteStorage?.delete(activeSite.slug);
 			// Reload to the base URL without any site-slug
@@ -165,6 +192,7 @@ export function PersistentPlaygroundOverlay({
 		} catch (error) {
 			logger.error(error);
 			alert('Failed to reset. Please try again.');
+			setIsDeleting(false);
 		}
 	}
 
@@ -285,9 +313,14 @@ export function PersistentPlaygroundOverlay({
 								<button
 									className={css.dangerButton}
 									onClick={handleStartOver}
+									disabled={isDeleting}
 								>
 									<Icon icon={trash} size={20} />
-									<span>Delete everything</span>
+									<span>
+										{isDeleting
+											? 'Deleting...'
+											: 'Delete everything'}
+									</span>
 								</button>
 							)}
 						</section>
