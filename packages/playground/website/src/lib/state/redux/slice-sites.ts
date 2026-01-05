@@ -25,6 +25,11 @@ import { logger } from '@php-wasm/logger';
 import { setActiveSiteError, type SiteError } from './slice-ui';
 import { RecommendedPHPVersion } from '@wp-playground/common';
 import { findFirewallErrorInCauseChain } from './error-utils';
+import {
+	defaultBlueprintUrl,
+	defaultStorageType,
+	defaultSiteSlug,
+} from 'virtual:website-defaults';
 
 /**
  * The Site model used to represent a site within Playground.
@@ -255,7 +260,16 @@ export function setTemporarySiteSpec(
 		dispatch: PlaygroundDispatch,
 		getState: () => PlaygroundReduxState
 	) => {
-		const siteSlug = deriveSlugFromSiteName(siteName);
+		// Use the configured default slug for persistent storage, or derive from name
+		const useDefaultSite =
+			defaultSiteSlug !== undefined && defaultStorageType !== 'none';
+		const siteSlug = useDefaultSite
+			? defaultSiteSlug! // Safe: checked above
+			: deriveSlugFromSiteName(siteName);
+		// Use a name derived from the default slug when configured
+		const effectiveSiteName = useDefaultSite
+			? deriveSiteNameFromSlug(defaultSiteSlug!) // Safe: checked above
+			: siteName;
 		const newSiteUrlParams = {
 			searchParams: parseSearchParams(
 				playgroundUrlWithQueryApiArgs.searchParams
@@ -272,7 +286,7 @@ export function setTemporarySiteSpec(
 				slug: siteSlug,
 				originalUrlParams: newSiteUrlParams,
 				metadata: {
-					name: siteName,
+					name: effectiveSiteName,
 					id: crypto.randomUUID(),
 					whenCreated: Date.now(),
 					storage: 'none' as const,
@@ -333,22 +347,43 @@ export function setTemporarySiteSpec(
 
 		const sites = getState().sites.entities;
 
-		// First, delete any existing temporary sites
+		// When a default site slug is configured, check if it already exists and reuse it
+		if (defaultSiteSlug && defaultStorageType !== 'none') {
+			const existingDefaultSite = Object.values(sites).find(
+				(site) => site.slug === defaultSiteSlug
+			);
+			if (existingDefaultSite) {
+				return existingDefaultSite;
+			}
+		}
+
+		// Check if there's an existing persistent site with matching URL params
+		// (when using persistent default storage, we want to reuse existing sites)
+		if (defaultStorageType !== 'none') {
+			for (const site of Object.values(sites)) {
+				if (
+					site.metadata.storage !== 'none' &&
+					JSON.stringify(site.originalUrlParams) ===
+						JSON.stringify(newSiteUrlParams)
+				) {
+					return site;
+				}
+			}
+		}
+
+		// Delete any existing temporary sites
 		for (const site of Object.values(sites)) {
 			if (site.metadata.storage === 'none') {
 				dispatch(sitesSlice.actions.removeSite(site.slug));
 			}
 		}
 
-		// Then create a new temporary site
-		const defaultBlueprint =
-			'https://raw.githubusercontent.com/WordPress/blueprints/refs/heads/trunk/blueprints/welcome/blueprint.json';
-
+		// Then create a new site (temporary or persistent depending on defaultStorageType)
 		let resolvedBlueprint: ResolvedBlueprint | undefined = undefined;
 		try {
 			resolvedBlueprint = await resolveBlueprintFromURL(
 				playgroundUrlWithQueryApiArgs,
-				defaultBlueprint
+				defaultBlueprintUrl
 			);
 		} catch (e) {
 			logger.error(
@@ -381,15 +416,21 @@ export function setTemporarySiteSpec(
 				);
 			}
 
-			// Compute the runtime configuration based on the resolved Blueprint:
+			// Compute the runtime configuration based on the resolved Blueprint.
+			// Use the configured default storage type ('none' for temporary, 'opfs' for persistent).
+			const storageType =
+				defaultStorageType === 'opfs' ||
+				defaultStorageType === 'local-fs'
+					? defaultStorageType
+					: 'none';
 			const newSiteInfo: SiteInfo = {
 				slug: siteSlug,
 				originalUrlParams: newSiteUrlParams,
 				metadata: {
-					name: siteName,
+					name: effectiveSiteName,
 					id: crypto.randomUUID(),
 					whenCreated: Date.now(),
-					storage: 'none' as const,
+					storage: storageType,
 					originalBlueprint: resolvedBlueprint.blueprint,
 					originalBlueprintSource: resolvedBlueprint.source!,
 					runtimeConfiguration: await resolveRuntimeConfiguration(
@@ -397,7 +438,15 @@ export function setTemporarySiteSpec(
 					)!,
 				},
 			};
-			dispatch(sitesSlice.actions.addSite(newSiteInfo));
+
+			if (storageType === 'none') {
+				// Temporary site - just add to redux state
+				dispatch(sitesSlice.actions.addSite(newSiteInfo));
+			} else {
+				// Persistent site - also persist metadata to OPFS
+				await opfsSiteStorage?.create(siteSlug, newSiteInfo.metadata);
+				dispatch(sitesSlice.actions.addSite(newSiteInfo));
+			}
 			dispatch(sitesSlice.actions.setFirstTemporarySiteCreated());
 			return newSiteInfo;
 		} catch (e) {
@@ -459,6 +508,12 @@ export interface SiteMetadata {
 	//       For a user, timestamps might be useful to disambiguate identically-named sites.
 	//       For playground, we might choose to sort by most recently used.
 	//whenLastLoaded: number;
+
+	/**
+	 * The last URL the user visited in this site.
+	 * Used to restore the user's position when returning to a persistent site.
+	 */
+	lastUrl?: string;
 
 	// @TODO: Accept any string as a php version?
 	runtimeConfiguration: RuntimeConfiguration;

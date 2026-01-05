@@ -10,6 +10,7 @@ import { viteIgnoreImports } from '../../vite-extensions/vite-ignore-imports';
 import {
 	websiteDevServerHost,
 	websiteDevServerPort,
+	persistentWebsiteDevServerPort,
 	remoteDevServerHost,
 	remoteDevServerPort,
 	websiteExtrasDevServerHost,
@@ -39,23 +40,40 @@ const proxy: CommonServerOptions['proxy'] = {
 
 const path = (filename: string) => new URL(filename, import.meta.url).pathname;
 export default defineConfig(({ command, mode }) => {
+	// "persistent" mode enables OPFS storage with a fixed site slug.
+	// Use --mode persistent for production builds or --mode persistent-development for dev.
+	const isPersistentMode = mode.startsWith('persistent');
+	const isProductionBuild = mode === 'production' || mode === 'persistent';
+
 	const corsProxyUrl =
 		'CORS_PROXY_URL' in process.env
 			? process.env.CORS_PROXY_URL
-			: mode === 'production'
-			? 'https://wordpress-playground-cors-proxy.net/?'
-			: '/cors-proxy/?';
+			: isProductionBuild
+				? 'https://wordpress-playground-cors-proxy.net/?'
+				: '/cors-proxy/?';
+
+	const defaultBlueprintUrl =
+		'https://raw.githubusercontent.com/WordPress/blueprints/refs/heads/trunk/blueprints/welcome/blueprint.json';
+
+	const defaultStorageType = isPersistentMode ? 'opfs' : 'none';
+	const defaultSiteSlug = isPersistentMode ? 'default' : undefined;
+
+	const devServerPort = isPersistentMode
+		? persistentWebsiteDevServerPort
+		: websiteDevServerPort;
 
 	return {
 		// Split traffic from this server on dev so that the iframe content and
 		// outer content can be served from the same origin. In production it's
 		// already the same host, but dev builds run two separate servers. See proxy
 		// config above.
-		base: mode === 'production' ? '/' : '/website-server/',
+		base: isProductionBuild ? '/' : '/website-server/',
 
 		assetsInclude: ['**/*.so', '**/*.dat'],
 
-		cacheDir: '../../../node_modules/.vite/packages-playground-website',
+		cacheDir: isPersistentMode
+			? '../../../node_modules/.vite/packages-playground-website-persistent'
+			: '../../../node_modules/.vite/packages-playground-website',
 
 		css: {
 			modules: {
@@ -64,13 +82,13 @@ export default defineConfig(({ command, mode }) => {
 		},
 
 		preview: {
-			port: websiteDevServerPort,
+			port: devServerPort,
 			host: websiteDevServerHost,
 			proxy,
 		},
 
 		server: {
-			port: websiteDevServerPort,
+			port: devServerPort,
 			host: websiteDevServerHost,
 			allowedHosts: ['playground.test', 'playground-preview.test'],
 			proxy: {
@@ -87,11 +105,13 @@ export default defineConfig(({ command, mode }) => {
 				// Proxy requests to the website-extras
 				'^/website-extras/': {
 					target: `http://${websiteExtrasDevServerHost}:${websiteExtrasDevServerPort}`,
+					changeOrigin: true,
 				},
 				// Proxy requests to the remote content through this server for dev
 				// builds. See base config below.
 				'^[/]((?!website-server).)': {
 					target: `http://${remoteDevServerHost}:${remoteDevServerPort}`,
+					changeOrigin: true,
 				},
 			},
 			fs: {
@@ -115,11 +135,25 @@ export default defineConfig(({ command, mode }) => {
 				content: `
 				export const corsProxyUrl = ${JSON.stringify(corsProxyUrl || undefined)};`,
 			}),
-			// GitHub OAuth flow
+			virtualModule({
+				name: 'website-defaults',
+				content: `
+				export const defaultBlueprintUrl = ${JSON.stringify(defaultBlueprintUrl || undefined)};
+				export const defaultStorageType = ${JSON.stringify(defaultStorageType || 'none')};
+				export const defaultSiteSlug = ${JSON.stringify(defaultSiteSlug || undefined)};`,
+			}),
+			// GitHub OAuth flow and server identification
 			{
 				name: 'configure-server',
 				configureServer(server: ViteDevServer) {
 					server.middlewares.use(oAuthMiddleware);
+					const serverType = isPersistentMode
+						? 'Persistent Playground'
+						: 'Temporary Playground';
+					server.printUrls = () => {
+						const url = `http://${websiteDevServerHost}:${devServerPort}/website-server/`;
+						console.log(`  ${serverType}: \x1b[36m${url}\x1b[0m`);
+					};
 				},
 			},
 			/**

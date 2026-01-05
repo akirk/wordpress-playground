@@ -176,6 +176,7 @@ const validRemoteOrigins = [
 	'https://localhost',
 	'http://127.0.0.1',
 	'http://127.0.0.1:5400',
+	'http://127.0.0.1:5401',
 	'https://127.0.0.1',
 	...additionalRemoteOrigins,
 ];
