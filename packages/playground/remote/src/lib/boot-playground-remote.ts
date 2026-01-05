@@ -127,6 +127,8 @@ export async function bootPlaygroundRemote() {
 	);
 
 	const wpFrame = document.querySelector('#wp') as HTMLIFrameElement;
+	let currentScope: string | undefined;
+
 	const phpRemoteApi: WebClientMixin = {
 		async onDownloadProgress(fn) {
 			return phpWorkerApi.onDownloadProgress(fn);
@@ -311,7 +313,9 @@ export async function bootPlaygroundRemote() {
 			 *      the detailed context.
 			 */
 			const navigationComplete = new Promise<void>((resolve) => {
-				wpFrame.addEventListener('load', () => resolve(), { once: true });
+				wpFrame.addEventListener('load', () => resolve(), {
+					once: true,
+				});
 			});
 
 			// If the URL is the same, we need to force a reload
@@ -405,7 +409,21 @@ export async function bootPlaygroundRemote() {
 			return await phpWorkerApi.hasCachedStaticFilesRemovedFromMinifiedBuild();
 		},
 
+		async setPlaygroundUrl(url: string) {
+			// Send the parent Playground URL to the service worker so it can
+			// inject it into HTML responses. This allows WordPress to create
+			// links back to the Playground (e.g., for bookmarklets).
+			if (currentScope) {
+				navigator.serviceWorker.controller?.postMessage({
+					type: 'set-playground-url',
+					scope: currentScope,
+					url,
+				});
+			}
+		},
+
 		async boot(options) {
+			currentScope = options.scope;
 			await phpWorkerApi.boot(options);
 
 			// Proxy the service worker messages to the web worker:
