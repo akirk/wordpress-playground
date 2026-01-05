@@ -34,7 +34,9 @@
 }
 
 .saveButton {
-	margin-left: 2px;
+	display: flex;
+	align-items: center;
+	gap: 4px;
 	padding: 4px 10px;
 	background: #fcd34d;
 	color: #1e2327;
@@ -47,8 +49,75 @@
 	min-height: 28px;
 }
 
+.saveButton svg {
+	fill: #1e2327;
+}
+
 .saveButton:hover {
 	background: #fde68a;
+}
+
+.infoButton {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px;
+	background: transparent;
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	opacity: 0.7;
+	transition: opacity 0.15s ease;
+}
+
+.infoButton:hover {
+	opacity: 1;
+}
+
+.infoButton svg {
+	fill: #fcd34d;
+}
+
+.infoPopover {
+	z-index: 1000;
+}
+
+.infoPopoverContent {
+	padding: 16px;
+	max-width: 280px;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.infoPopoverContent h4 {
+	margin: 0 0 8px;
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.infoPopoverContent p {
+	margin: 0 0 8px;
+	color: #666;
+}
+
+.infoPopoverContent p:last-of-type {
+	margin-bottom: 12px;
+}
+
+.infoPopoverLink {
+	display: inline-block;
+	padding: 0;
+	background: none;
+	border: none;
+	color: #3858e9;
+	font-size: 13px;
+	font-weight: 500;
+	cursor: pointer;
+	text-decoration: underline;
+}
+
+.infoPopoverLink:hover {
+	color: #2145c9;
 }
 
 .saving {

@@ -53,6 +53,12 @@
 	color: #9ca3af;
 }
 
+.backupActions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
 .backupButton {
 	padding: 10px 20px;
 	background: #3858e9;
@@ -73,6 +79,37 @@
 .backupButton:disabled {
 	opacity: 0.6;
 	cursor: not-allowed;
+}
+
+.importButton {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 16px;
+	background: transparent;
+	color: #9ca3af;
+	border: 1px solid #4b5563;
+	border-radius: 6px;
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.15s ease;
+	white-space: nowrap;
+}
+
+.importButton:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.05);
+	color: #fff;
+	border-color: #6b7280;
+}
+
+.importButton:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.importButton svg {
+	fill: currentColor;
 }
 
 .backupDescription {

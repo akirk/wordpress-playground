@@ -1,18 +1,14 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import css from './save-status-indicator.module.css';
 import classNames from 'classnames';
-import {
-	useAppSelector,
-	getActiveClientInfo,
-	useActiveSite,
-	useAppDispatch,
-} from '../../lib/state/redux/store';
+import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
 import { usePlaygroundClient } from '../../lib/use-playground-client';
 import { zipWpContent } from '@wp-playground/client';
 import saveAs from 'file-saver';
 import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
-import { Icon } from '@wordpress/components';
-import { check, backup } from '@wordpress/icons';
+import { Icon, Popover } from '@wordpress/components';
+import { backup, info, check } from '@wordpress/icons';
+import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
 
 function formatBackupFilename(): string {
 	const now = new Date();
@@ -32,13 +28,21 @@ function isSameDay(timestamp1: number, timestamp2: number): boolean {
 }
 
 export function BackupStatusIndicator() {
-	const clientInfo = useAppSelector(getActiveClientInfo);
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const playground = usePlaygroundClient();
 	const [isBackingUp, setIsBackingUp] = useState(false);
+	const [showInfoPopover, setShowInfoPopover] = useState(false);
+	const infoButtonRef = useRef<HTMLButtonElement>(null);
 
-	const { lastBackupDate, lastAccessDate } = activeSite?.metadata || {};
+	const { lastBackupDate, lastAccessDate, whenCreated } =
+		activeSite?.metadata || {};
+
+	// Only show backup indicator if user has returned after creation day
+	const hasReturnedAfterCreation =
+		whenCreated &&
+		lastAccessDate &&
+		!isSameDay(whenCreated, lastAccessDate);
 
 	const needsBackup =
 		!lastBackupDate ||
@@ -68,6 +72,16 @@ export function BackupStatusIndicator() {
 		}
 	};
 
+	const handleOpenSettings = () => {
+		setShowInfoPopover(false);
+		dispatch(setSiteManagerOpen(true));
+	};
+
+	// Hide on first day - no need to prompt for backup yet
+	if (!hasReturnedAfterCreation) {
+		return null;
+	}
+
 	if (isBackingUp) {
 		return (
 			<div className={classNames(css.indicator, css.saving)}>
@@ -77,34 +91,66 @@ export function BackupStatusIndicator() {
 		);
 	}
 
-	if (needsBackup) {
+	// Backup is current - show green checkmark
+	if (!needsBackup) {
 		return (
-			<div className={classNames(css.indicator, css.unsaved)}>
-				<Icon icon={backup} size={18} />
-				<span className={css.label}>Backup recommended</span>
-				<button
-					className={css.saveButton}
-					onClick={handleBackup}
-					type="button"
-					disabled={!playground}
-				>
-					Backup
-				</button>
+			<div
+				className={classNames(css.indicator, css.saved)}
+				title="Backed up"
+			>
+				<Icon icon={check} size={18} />
 			</div>
 		);
 	}
 
 	return (
-		<button
-			className={classNames(css.indicator, css.saved)}
-			onClick={handleBackup}
-			type="button"
-			disabled={!playground}
-			style={{ cursor: 'pointer' }}
-			title="Click to create a backup"
-		>
-			<Icon icon={check} size={18} />
-			<span className={css.label}>Backed up</span>
-		</button>
+		<div className={classNames(css.indicator, css.unsaved)}>
+			<button
+				className={css.saveButton}
+				onClick={handleBackup}
+				type="button"
+				disabled={!playground}
+			>
+				<Icon icon={backup} size={16} />
+				Backup
+			</button>
+			<button
+				ref={infoButtonRef}
+				className={css.infoButton}
+				onClick={() => setShowInfoPopover(!showInfoPopover)}
+				type="button"
+				aria-label="Why backup?"
+			>
+				<Icon icon={info} size={18} />
+			</button>
+			{showInfoPopover && (
+				<Popover
+					anchor={infoButtonRef.current}
+					placement="bottom-end"
+					onClose={() => setShowInfoPopover(false)}
+					className={css.infoPopover}
+				>
+					<div className={css.infoPopoverContent}>
+						<h4>Why backup?</h4>
+						<p>
+							Your Playground is stored in this browser. Browser
+							data can be cleared unexpectedly, so regular backups
+							keep your work safe.
+						</p>
+						<p>
+							To restore a backup, open Settings and use "Import
+							backup".
+						</p>
+						<button
+							className={css.infoPopoverLink}
+							onClick={handleOpenSettings}
+							type="button"
+						>
+							Open Settings
+						</button>
+					</div>
+				</Popover>
+			)}
+		</div>
 	);
 }

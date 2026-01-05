@@ -17,7 +17,6 @@ class Playground_Welcome {
 
     public function __construct() {
         add_action('admin_menu', [$this, 'add_admin_page']);
-        add_action('admin_init', [$this, 'maybe_redirect_to_welcome']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_styles']);
         add_action('wp_ajax_playground_welcome_save', [$this, 'handle_save']);
     }
@@ -32,24 +31,6 @@ class Playground_Welcome {
             'dashicons-welcome-learn-more',
             2
         );
-    }
-
-    public function maybe_redirect_to_welcome() {
-        if (get_option($this->option_name)) {
-            return;
-        }
-
-        global $pagenow;
-        if ($pagenow === 'admin.php' && isset($_GET['page']) && $_GET['page'] === 'playground-welcome') {
-            return;
-        }
-
-        if (defined('DOING_AJAX') && DOING_AJAX) {
-            return;
-        }
-
-        wp_redirect(admin_url('admin.php?page=playground-welcome'));
-        exit;
     }
 
     public function enqueue_styles($hook) {

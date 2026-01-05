@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { usePlaygroundClient } from '../../lib/use-playground-client';
-import { zipWpContent } from '@wp-playground/client';
+import { zipWpContent, importWordPressFiles } from '@wp-playground/client';
 import saveAs from 'file-saver';
 import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
 import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
 import { Icon } from '@wordpress/icons';
-import { check, backup } from '@wordpress/icons';
+import { check, backup, upload } from '@wordpress/icons';
+import { logger } from '@php-wasm/logger';
 import css from './style.module.css';
 
 function formatBackupFilename(): string {
@@ -50,6 +51,8 @@ export function BackupReminder() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const [isBackingUp, setIsBackingUp] = useState(false);
+	const [isImporting, setIsImporting] = useState(false);
+	const importInputRef = useRef<HTMLInputElement>(null);
 
 	if (!activeSite || activeSite.metadata.storage === 'none') {
 		return null;
@@ -75,7 +78,6 @@ export function BackupReminder() {
 			const filename = formatBackupFilename();
 			saveAs(new File([bytes], filename));
 
-			// Update last backup date
 			await dispatch(
 				updateSiteMetadata({
 					slug: activeSite.slug,
@@ -87,12 +89,52 @@ export function BackupReminder() {
 		}
 	};
 
+	const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file || !playground) return;
+
+		const proceed = window.confirm(
+			'Importing a backup will replace all current content. Are you sure you want to continue?'
+		);
+		if (!proceed) {
+			if (importInputRef.current) {
+				importInputRef.current.value = '';
+			}
+			return;
+		}
+
+		setIsImporting(true);
+		try {
+			await importWordPressFiles(playground, { wordPressFilesZip: file });
+			await playground.goTo('/');
+			alert('Backup imported successfully! The page will now refresh.');
+			window.location.reload();
+		} catch (error) {
+			logger.error(error);
+			alert(
+				'Unable to import backup. Is it a valid WordPress Playground export?'
+			);
+		} finally {
+			setIsImporting(false);
+			if (importInputRef.current) {
+				importInputRef.current.value = '';
+			}
+		}
+	};
+
 	const lastBackupText = lastBackupDate
 		? `Last backup: ${formatRelativeDate(lastBackupDate)}`
 		: 'Never backed up';
 
 	return (
 		<div className={css.backupReminder}>
+			<input
+				type="file"
+				ref={importInputRef}
+				onChange={handleImport}
+				accept=".zip,application/zip"
+				style={{ display: 'none' }}
+			/>
 			<div className={css.backupContent}>
 				<div className={css.backupStatus}>
 					{needsBackup ? (
@@ -121,17 +163,27 @@ export function BackupReminder() {
 						</>
 					)}
 				</div>
-				<button
-					className={css.backupButton}
-					onClick={handleBackup}
-					disabled={!playground || isBackingUp}
-				>
-					{isBackingUp ? 'Backing up...' : 'Download backup'}
-				</button>
+				<div className={css.backupActions}>
+					<button
+						className={css.backupButton}
+						onClick={handleBackup}
+						disabled={!playground || isBackingUp || isImporting}
+					>
+						{isBackingUp ? 'Backing up...' : 'Download backup'}
+					</button>
+					<button
+						className={css.importButton}
+						onClick={() => importInputRef.current?.click()}
+						disabled={!playground || isBackingUp || isImporting}
+					>
+						<Icon icon={upload} size={16} />
+						{isImporting ? 'Importing...' : 'Import backup'}
+					</button>
+				</div>
 			</div>
 			<p className={css.backupDescription}>
-				Download a .zip backup of your Playground to keep your work
-				safe. You can restore it later using "Import .zip".
+				Your Playground is stored in this browser. Browser data can be
+				cleared unexpectedly, so regular backups keep your work safe.
 			</p>
 		</div>
 	);
