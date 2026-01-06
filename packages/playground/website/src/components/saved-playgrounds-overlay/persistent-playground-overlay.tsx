@@ -15,6 +15,7 @@ import store from '../../lib/state/redux/store';
 import { opfsSiteStorage } from '../../lib/state/opfs/opfs-site-storage';
 import { WordPressIcon } from '@wp-playground/components';
 import { BackupReminder } from '../backup-reminder';
+import { usePlaygroundClient } from '../../lib/use-playground-client';
 
 type PluginBlueprint = {
 	title: string;
@@ -147,10 +148,17 @@ export function PersistentPlaygroundOverlay({
 	onClose,
 }: PersistentPlaygroundOverlayProps) {
 	const activeSite = useActiveSite();
+	const playground = usePlaygroundClient();
 
 	const [isClosing, setIsClosing] = useState(false);
 	const [showDeleteButton, setShowDeleteButton] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
+
+	const [activePlugins, setActivePlugins] = useState<string[]>([]);
+	const [pluginsToKeep, setPluginsToKeep] = useState<Set<string>>(new Set());
+	const [isLoadingPlugins, setIsLoadingPlugins] = useState(true);
+	const [isSavingPlugins, setIsSavingPlugins] = useState(false);
+	const [showPluginList, setShowPluginList] = useState(false);
 
 	const handleKeyDown = useCallback(
 		(event: KeyboardEvent) => {
@@ -171,6 +179,140 @@ export function PersistentPlaygroundOverlay({
 			document.removeEventListener('keydown', handleKeyDown, true);
 		};
 	}, [handleKeyDown]);
+
+	const [pluginNames, setPluginNames] = useState<Record<string, string>>({});
+
+	useEffect(() => {
+		async function fetchPlugins() {
+			if (!playground) {
+				return;
+			}
+			try {
+				const response = await playground.run({
+					code: `<?php
+						// Prevent plugins from loading
+						define('WP_INSTALLING', true);
+						require_once '/wordpress/wp-load.php';
+						require_once ABSPATH . 'wp-admin/includes/plugin.php';
+
+						$active = get_option('active_plugins', []);
+						$result = [];
+
+						foreach ($active as $plugin_file) {
+							$plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
+							if (file_exists($plugin_path)) {
+								$data = get_plugin_data($plugin_path, false, false);
+								$result[$plugin_file] = $data['Name'] ?: $plugin_file;
+							} else {
+								$result[$plugin_file] = $plugin_file;
+							}
+						}
+
+						echo json_encode($result);
+					`,
+				});
+				const pluginsWithNames = JSON.parse(response.text);
+				const pluginPaths = Object.keys(pluginsWithNames);
+				setActivePlugins(pluginPaths);
+				setPluginsToKeep(new Set(pluginPaths));
+				setPluginNames(pluginsWithNames);
+			} catch (error) {
+				logger.error('Failed to fetch plugins:', error);
+				setActivePlugins([]);
+			} finally {
+				setIsLoadingPlugins(false);
+			}
+		}
+		fetchPlugins();
+	}, [playground]);
+
+	function togglePlugin(pluginPath: string) {
+		setPluginsToKeep((prev) => {
+			const next = new Set(prev);
+			if (next.has(pluginPath)) {
+				next.delete(pluginPath);
+			} else {
+				next.add(pluginPath);
+			}
+			return next;
+		});
+	}
+
+	async function handleSaveAndReboot() {
+		if (!playground || isSavingPlugins) {
+			return;
+		}
+
+		setIsSavingPlugins(true);
+		try {
+			const pluginsToDeactivate = activePlugins.filter(
+				(p) => !pluginsToKeep.has(p)
+			);
+			logger.log('Deactivating plugins:', pluginsToDeactivate);
+			const deactivateJson = JSON.stringify(pluginsToDeactivate);
+
+			const response = await playground.run({
+				code: `<?php
+					// Prevent plugins from loading (like WP-CLI --skip-plugins)
+					define('WP_INSTALLING', true);
+
+					require_once '/wordpress/wp-load.php';
+					require_once ABSPATH . 'wp-admin/includes/plugin.php';
+
+					$before_plugins = get_option('active_plugins', []);
+
+					$to_deactivate = json_decode(getenv('DEACTIVATE_JSON'), true);
+					if (!is_array($to_deactivate)) {
+						echo json_encode(['error' => 'Failed to parse DEACTIVATE_JSON']);
+						exit;
+					}
+
+					// Use WordPress's deactivate_plugins function
+					deactivate_plugins($to_deactivate, true); // true = silent, no hooks
+
+					// Clear any plugin-related caches/transients
+					wp_cache_delete('alloptions', 'options');
+					delete_transient('plugin_slugs');
+
+					$after_plugins = get_option('active_plugins', []);
+
+					// Double-check by reading directly from database
+					global $wpdb;
+					$db_value = $wpdb->get_var("SELECT option_value FROM {$wpdb->options} WHERE option_name = 'active_plugins'");
+					$db_plugins = maybe_unserialize($db_value);
+
+					echo json_encode([
+						'success' => true,
+						'before' => $before_plugins,
+						'after' => $after_plugins,
+						'after_from_db' => $db_plugins,
+						'deactivated' => $to_deactivate
+					]);
+				`,
+				env: { DEACTIVATE_JSON: deactivateJson },
+			});
+
+			const result = JSON.parse(response.text);
+			if (result.error) {
+				throw new Error(result.error);
+			}
+
+			logger.log('Plugin save result:', result);
+			logger.log('Before:', result.before);
+			logger.log('After (get_option):', result.after);
+			logger.log('After (direct DB):', result.after_from_db);
+
+			window.location.reload();
+		} catch (error) {
+			logger.error('Failed to save plugins:', error);
+			alert('Failed to save plugin changes. Please try again.');
+			setIsSavingPlugins(false);
+		}
+	}
+
+	const hasPluginChanges =
+		activePlugins.length !== pluginsToKeep.size ||
+		activePlugins.some((p) => !pluginsToKeep.has(p));
 
 	async function handleStartOver() {
 		if (!activeSite || activeSite.metadata.storage === 'none') {
@@ -221,7 +363,7 @@ export function PersistentPlaygroundOverlay({
 
 				<div className={css.body}>
 					<section className={css.section}>
-						<h2 className={css.sectionTitle}>Add features</h2>
+						<h2 className={css.sectionTitle}>Install Apps</h2>
 						<div className={css.featuresList}>
 							{pluginBlueprints.map((plugin, index) => {
 								const url = new URL(window.location.href);
@@ -326,6 +468,70 @@ export function PersistentPlaygroundOverlay({
 							)}
 						</section>
 					</div>
+
+					<section className={css.section}>
+						<h2 className={css.sectionTitle}>Recovery</h2>
+						<p className={css.sectionDescription}>
+							If a plugin is causing issues,{' '}
+							<button
+								className={css.textButton}
+								onClick={() =>
+									setShowPluginList(!showPluginList)
+								}
+							>
+								you can disable it here
+							</button>
+							.
+						</p>
+						{showPluginList &&
+							(isLoadingPlugins ? (
+								<p className={css.sectionDescription}>
+									Loading plugins...
+								</p>
+							) : activePlugins.length === 0 ? (
+								<p className={css.sectionDescription}>
+									No active plugins
+								</p>
+							) : (
+								<>
+									<div className={css.pluginList}>
+										{activePlugins.map((plugin) => (
+											<label
+												key={plugin}
+												className={css.pluginItem}
+											>
+												<input
+													type="checkbox"
+													checked={pluginsToKeep.has(
+														plugin
+													)}
+													onChange={() =>
+														togglePlugin(plugin)
+													}
+												/>
+												<span
+													className={css.pluginName}
+												>
+													{pluginNames[plugin] ||
+														plugin}
+												</span>
+											</label>
+										))}
+									</div>
+									{hasPluginChanges && (
+										<button
+											className={css.primaryButton}
+											onClick={handleSaveAndReboot}
+											disabled={isSavingPlugins}
+										>
+											{isSavingPlugins
+												? 'Saving...'
+												: 'Save and reboot'}
+										</button>
+									)}
+								</>
+							))}
+					</section>
 				</div>
 			</VStack>
 		</div>

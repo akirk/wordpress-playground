@@ -238,7 +238,7 @@ export default defineConfig(({ command, mode }) => {
 					if (isPersistentMode) {
 						html = html.replace(
 							/<title>.*?<\/title>/,
-							'<title>Your WordPress</title>'
+							'<title>My WordPress</title>'
 						);
 					}
 					return html;
