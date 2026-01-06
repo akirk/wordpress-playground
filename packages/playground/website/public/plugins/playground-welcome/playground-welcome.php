@@ -51,8 +51,8 @@ class Playground_Welcome {
         ?>
         <div class="playground-welcome-overlay">
             <div class="playground-welcome-dialog">
-                <h1>👋 Welcome to WordPress Playground</h1>
-                <p class="intro">Let's personalize your experience and add some content to get you started.</p>
+                <h1>👋 Welcome to Your WordPress</h1>
+                <p class="intro">This is a private WordPress that's free and needs no account. It's stored in your browser and will be here when you come back.</p>
 
                 <form id="playground-welcome-form" method="post">
                     <?php wp_nonce_field('playground_welcome_nonce', 'nonce'); ?>
@@ -63,8 +63,8 @@ class Playground_Welcome {
                             type="text"
                             id="display_name"
                             name="display_name"
-                            value="<?php echo esc_attr($current_user->display_name); ?>"
-                            placeholder="Enter your name"
+                            placeholder="<?php echo esc_attr($current_user->display_name); ?>"
+                            autofocus
                         >
                     </div>
 
@@ -169,7 +169,6 @@ class Playground_Welcome {
 
         $messages = [];
 
-        // Update display name and site title
         $display_name = sanitize_text_field($_POST['display_name'] ?? '');
         if (!empty($display_name)) {
             $user_id = get_current_user_id();
@@ -193,12 +192,9 @@ class Playground_Welcome {
             $import_result = $this->import_feed($feed_url, $max_items);
             if ($import_result['success']) {
                 $messages[] = $import_result['message'];
-                $this->delete_hello_world_post();
             } else {
                 wp_send_json_error(['message' => $import_result['message']]);
             }
-        } else {
-            $this->delete_hello_world_post();
         }
 
         update_option($this->option_name, true);
@@ -208,18 +204,6 @@ class Playground_Welcome {
             : 'Setup complete! Redirecting to your site...';
 
         wp_send_json_success(['message' => $final_message]);
-    }
-
-    private function delete_hello_world_post() {
-        $hello_world = get_page_by_path('hello-world', OBJECT, 'post');
-        if ($hello_world) {
-            wp_delete_post($hello_world->ID, true);
-        }
-
-        $post_one = get_post(1);
-        if ($post_one && $post_one->post_title === 'Hello world!') {
-            wp_delete_post(1, true);
-        }
     }
 
     private function import_feed($feed_url, $max_items) {

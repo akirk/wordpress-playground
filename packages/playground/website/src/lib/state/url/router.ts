@@ -44,13 +44,18 @@ export class PlaygroundRoute {
 		} else {
 			// If this is the default site, don't add site-slug to the URL
 			if (defaultSiteSlug && site.slug === defaultSiteSlug) {
-				// Preserve blueprint-url parameter if present
+				// Preserve blueprint-url and url parameters if present
 				const baseParams = new URLSearchParams(baseUrl.split('?')[1]);
-				const blueprintUrl = baseParams.get('blueprint-url');
+				const preserveParamsKeys = ['blueprint-url', 'url'];
+				const preserveParams: Record<string, string> = {};
+				for (const param of preserveParamsKeys) {
+					const value = baseParams.get(param);
+					if (value !== null) {
+						preserveParams[param] = value;
+					}
+				}
 				return updateUrl(baseUrl, {
-					searchParams: blueprintUrl
-						? { 'blueprint-url': blueprintUrl }
-						: {},
+					searchParams: preserveParams,
 					hash: '',
 				});
 			}

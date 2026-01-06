@@ -226,7 +226,7 @@ export default defineConfig(({ command, mode }) => {
 							.execSync('git rev-parse HEAD')
 							.toString()
 							.trim();
-						return html.replace(
+						html = html.replace(
 							'</head>',
 							`<meta name="commit-id" content="${commitId}" />
 							</head>`
@@ -234,8 +234,14 @@ export default defineConfig(({ command, mode }) => {
 					} catch (e) {
 						// eslint-disable-next-line no-console
 						console.error('Failed to inject commit ID', e);
-						return html;
 					}
+					if (isPersistentMode) {
+						html = html.replace(
+							/<title>.*?<\/title>/,
+							'<title>Your WordPress</title>'
+						);
+					}
+					return html;
 				},
 			},
 		],
