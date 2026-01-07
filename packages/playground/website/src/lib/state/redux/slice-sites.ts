@@ -569,10 +569,10 @@ export interface SiteMetadata {
 	lastUrl?: string;
 
 	/**
-	 * Timestamp of last successful backup.
-	 * Used to determine if a backup reminder should be shown.
+	 * History of backup filenames with timestamps.
+	 * Most recent first.
 	 */
-	lastBackupDate?: number;
+	backupHistory?: Array<{ filename: string; timestamp: number }>;
 
 	/**
 	 * Timestamp of last site access.

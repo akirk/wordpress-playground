@@ -10,11 +10,20 @@ import { Icon, Popover } from '@wordpress/components';
 import { backup, info, check } from '@wordpress/icons';
 import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
 
-function formatBackupFilename(): string {
+function sanitizeForFilename(name: string): string {
+	return name
+		.trim()
+		.replace(/['']/g, '') // Remove apostrophes
+		.replace(/[/\\:*?"<>|]/g, '') // Remove filesystem-unsafe characters
+		.replace(/\s+/g, '-'); // Replace whitespace with dashes
+}
+
+function formatBackupFilename(siteName: string): string {
 	const now = new Date();
 	const date = now.toISOString().slice(0, 10);
 	const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
-	return `playground-backup-${date}-${time}.zip`;
+	const sanitized = sanitizeForFilename(siteName);
+	return `${sanitized}-backup-${date}-${time}.zip`;
 }
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
@@ -35,8 +44,12 @@ export function BackupStatusIndicator() {
 	const [showInfoPopover, setShowInfoPopover] = useState(false);
 	const infoButtonRef = useRef<HTMLButtonElement>(null);
 
-	const { lastBackupDate, lastAccessDate, whenCreated } =
-		activeSite?.metadata || {};
+	const {
+		backupHistory = [],
+		lastAccessDate,
+		whenCreated,
+	} = activeSite?.metadata || {};
+	const lastBackupDate = backupHistory[0]?.timestamp;
 
 	// Only show backup indicator if user has returned after creation day
 	const hasReturnedAfterCreation =
@@ -49,24 +62,44 @@ export function BackupStatusIndicator() {
 		(lastAccessDate && !isSameDay(lastBackupDate, lastAccessDate));
 
 	const handleBackup = async () => {
-		if (!playground || isBackingUp) return;
+		if (!playground || isBackingUp || !activeSite) return;
 
 		setIsBackingUp(true);
 		try {
+			// Get site name from WordPress
+			let siteName = activeSite.metadata.name;
+			try {
+				const response = await playground.run({
+					code: `<?php
+						require_once '/wordpress/wp-load.php';
+						echo get_option('blogname', 'WordPress');
+					`,
+				});
+				const wpSiteName = response.text.trim();
+				if (wpSiteName) {
+					siteName = wpSiteName;
+				}
+			} catch (e) {
+				// Fall back to metadata name
+			}
+
 			const bytes = await zipWpContent(playground, {
 				selfContained: true,
 			});
-			const filename = formatBackupFilename();
+			const filename = formatBackupFilename(siteName);
+			const timestamp = Date.now();
 			saveAs(new File([bytes], filename));
 
-			if (activeSite) {
-				await dispatch(
-					updateSiteMetadata({
-						slug: activeSite.slug,
-						changes: { lastBackupDate: Date.now() },
-					})
-				);
-			}
+			const newHistory = [
+				{ filename, timestamp },
+				...backupHistory.slice(0, 9),
+			];
+			await dispatch(
+				updateSiteMetadata({
+					slug: activeSite.slug,
+					changes: { backupHistory: newHistory },
+				})
+			);
 		} finally {
 			setIsBackingUp(false);
 		}

@@ -9,11 +9,20 @@ import { check, backup, upload } from '@wordpress/icons';
 import { logger } from '@php-wasm/logger';
 import css from './style.module.css';
 
-function formatBackupFilename(): string {
+function sanitizeForFilename(name: string): string {
+	return name
+		.trim()
+		.replace(/['']/g, '') // Remove apostrophes
+		.replace(/[/\\:*?"<>|]/g, '') // Remove filesystem-unsafe characters
+		.replace(/\s+/g, '-'); // Replace whitespace with dashes
+}
+
+function formatBackupFilename(siteName: string): string {
 	const now = new Date();
 	const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
 	const time = now.toTimeString().slice(0, 8).replace(/:/g, ''); // HHMMSS
-	return `playground-backup-${date}-${time}.zip`;
+	const sanitized = sanitizeForFilename(siteName);
+	return `${sanitized}-backup-${date}-${time}.zip`;
 }
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
@@ -46,19 +55,26 @@ function formatRelativeDate(timestamp: number): string {
 	}
 }
 
-export function BackupReminder() {
+interface BackupReminderProps {
+	wpSiteName?: string | null;
+}
+
+export function BackupReminder({ wpSiteName }: BackupReminderProps = {}) {
 	const playground = usePlaygroundClient();
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const [isBackingUp, setIsBackingUp] = useState(false);
 	const [isImporting, setIsImporting] = useState(false);
+	const [showHistory, setShowHistory] = useState(false);
 	const importInputRef = useRef<HTMLInputElement>(null);
 
 	if (!activeSite || activeSite.metadata.storage === 'none') {
 		return null;
 	}
 
-	const { lastBackupDate, lastAccessDate } = activeSite.metadata;
+	const { backupHistory = [], lastAccessDate } = activeSite.metadata;
+	const lastBackup = backupHistory[0];
+	const lastBackupDate = lastBackup?.timestamp;
 
 	// Determine if backup is needed:
 	// - Never backed up, OR
@@ -72,16 +88,22 @@ export function BackupReminder() {
 
 		setIsBackingUp(true);
 		try {
+			const siteName = wpSiteName || activeSite.metadata.name;
 			const bytes = await zipWpContent(playground, {
 				selfContained: true,
 			});
-			const filename = formatBackupFilename();
+			const filename = formatBackupFilename(siteName);
+			const timestamp = Date.now();
 			saveAs(new File([bytes], filename));
 
+			const newHistory = [
+				{ filename, timestamp },
+				...backupHistory.slice(0, 9), // Keep max 10 entries
+			];
 			await dispatch(
 				updateSiteMetadata({
 					slug: activeSite.slug,
-					changes: { lastBackupDate: Date.now() },
+					changes: { backupHistory: newHistory },
 				})
 			);
 		} finally {
@@ -122,9 +144,27 @@ export function BackupReminder() {
 		}
 	};
 
-	const lastBackupText = lastBackupDate
-		? `Last backup: ${formatRelativeDate(lastBackupDate)}`
+	const hasHistory = backupHistory.length > 0;
+	const lastBackupText = lastBackup
+		? `Downloaded ${formatRelativeDate(lastBackup.timestamp)}`
 		: 'Never backed up';
+
+	const renderLastBackupDate = () => {
+		if (!hasHistory) {
+			return <span className={css.lastBackupDate}>{lastBackupText}</span>;
+		}
+		return (
+			<button
+				className={css.lastBackupDateButton}
+				onClick={() => setShowHistory(!showHistory)}
+			>
+				{lastBackupText}
+				<span className={css.historyIndicator}>
+					{showHistory ? '▲' : '▼'}
+				</span>
+			</button>
+		);
+	};
 
 	return (
 		<div className={css.backupReminder}>
@@ -144,9 +184,7 @@ export function BackupReminder() {
 								<span className={css.statusText}>
 									Backup recommended
 								</span>
-								<span className={css.lastBackupDate}>
-									{lastBackupText}
-								</span>
+								{renderLastBackupDate()}
 							</div>
 						</>
 					) : (
@@ -156,9 +194,7 @@ export function BackupReminder() {
 								<span className={css.statusText}>
 									Up to date
 								</span>
-								<span className={css.lastBackupDate}>
-									{lastBackupText}
-								</span>
+								{renderLastBackupDate()}
 							</div>
 						</>
 					)}
@@ -181,6 +217,20 @@ export function BackupReminder() {
 					</button>
 				</div>
 			</div>
+			{showHistory && (
+				<ul className={css.backupHistoryList}>
+					{backupHistory.map((entry, index) => (
+						<li key={index} className={css.backupHistoryItem}>
+							<span className={css.backupFilename}>
+								{entry.filename}
+							</span>
+							<span className={css.backupDate}>
+								{formatRelativeDate(entry.timestamp)}
+							</span>
+						</li>
+					))}
+				</ul>
+			)}
 			<p className={css.backupDescription}>
 				Your Playground is stored in this browser. Browser data can be
 				cleared unexpectedly, so regular backups keep your work safe.
