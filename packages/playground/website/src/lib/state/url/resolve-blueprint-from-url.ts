@@ -14,6 +14,8 @@ import { parseBlueprint } from './router';
 import { OverlayFilesystem, InMemoryFilesystem } from '@wp-playground/storage';
 import { RecommendedPHPVersion } from '@wp-playground/common';
 import { logger } from '@php-wasm/logger';
+// @ts-ignore
+import { corsProxyUrl } from 'virtual:cors-proxy-url';
 
 export type BlueprintSource =
 	| {
@@ -428,6 +430,7 @@ function addBrowserLanguageSteps(
 	blueprint.steps.unshift({
 		step: 'setSiteLanguage',
 		language: wpLocale,
+		corsProxy: corsProxyUrl,
 	});
 
 	// Check if we have plugin translations for this language
@@ -473,6 +476,27 @@ function addBrowserLanguageSteps(
 		];
 
 		blueprint.steps.splice(insertIndex, 0, ...translationSteps);
+
+		// Also overwrite /tmp/welcome-post.html with the localized version.
+		// The blueprint copies English welcome-post.html to /tmp/ and then uses
+		// runPHP to update the welcome post content. We need to overwrite /tmp/
+		// with the localized version BEFORE that runPHP step runs.
+		const runPhpIndex = blueprint.steps.findIndex(
+			(step: any) =>
+				step?.step === 'runPHP' &&
+				typeof step?.code === 'string' &&
+				step.code.includes('welcome-post.html')
+		);
+		if (runPhpIndex > 0) {
+			blueprint.steps.splice(runPhpIndex, 0, {
+				step: 'writeFile',
+				path: '/tmp/welcome-post.html',
+				data: {
+					resource: 'url',
+					url: `${pluginsBaseUrl}${pluginLangDir}/welcome-post.html`,
+				},
+			});
+		}
 	}
 }
 

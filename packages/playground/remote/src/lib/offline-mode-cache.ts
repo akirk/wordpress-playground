@@ -174,6 +174,16 @@ export function shouldCacheUrl(url: URL) {
 	}
 
 	/**
+	 * Don't cache CORS proxy requests. The target URL is passed as a query
+	 * parameter (e.g., /cors-proxy/?https://example.com/file.zip), and since
+	 * the cache uses ignoreSearch: true, all proxy requests would incorrectly
+	 * match the same cache entry.
+	 */
+	if (url.pathname.startsWith('/cors-proxy')) {
+		return false;
+	}
+
+	/**
 	 * Allow only requests to the same hostname to be cached.
 	 */
 	return self.location.hostname === url.hostname;
