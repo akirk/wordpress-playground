@@ -21,6 +21,11 @@ import {
 	type ResolvedBlueprint,
 	applyQueryOverrides,
 } from '../url/resolve-blueprint-from-url';
+import {
+	shouldUsePersistentBlueprint,
+	loadPersistentBlueprint,
+	resolveUrlParamsForExistingSite,
+} from '../../persistent-playground';
 import { logger } from '@php-wasm/logger';
 import { setActiveSiteError, type SiteError } from './slice-ui';
 import { RecommendedPHPVersion } from '@wp-playground/common';
@@ -368,24 +373,16 @@ export function setTemporarySiteSpec(
 			if (existingDefaultSite) {
 				// Check if there are actionable URL params that should be applied
 				// to the existing site (e.g., ?plugin=friends)
-				if (hasActionableUrlParams(playgroundUrlWithQueryApiArgs)) {
-					try {
-						const resolvedBlueprint = await resolveBlueprintFromURL(
-							playgroundUrlWithQueryApiArgs,
-							undefined // No default blueprint - just URL params
-						);
-						dispatch(
-							sitesSlice.actions.setPendingUrlBlueprint({
-								siteSlug: existingDefaultSite.slug,
-								blueprint: resolvedBlueprint.blueprint,
-							})
-						);
-					} catch (e) {
-						logger.error(
-							'Error resolving URL blueprint for existing site:',
-							e
-						);
-					}
+				const blueprint = await resolveUrlParamsForExistingSite(
+					playgroundUrlWithQueryApiArgs
+				);
+				if (blueprint) {
+					dispatch(
+						sitesSlice.actions.setPendingUrlBlueprint({
+							siteSlug: existingDefaultSite.slug,
+							blueprint,
+						})
+					);
 				}
 				return existingDefaultSite;
 			}
@@ -415,10 +412,21 @@ export function setTemporarySiteSpec(
 		// Then create a new site (temporary or persistent depending on defaultStorageType)
 		let resolvedBlueprint: ResolvedBlueprint | undefined = undefined;
 		try {
-			resolvedBlueprint = await resolveBlueprintFromURL(
-				playgroundUrlWithQueryApiArgs,
-				defaultBlueprintUrl
-			);
+			if (
+				shouldUsePersistentBlueprint(
+					playgroundUrlWithQueryApiArgs,
+					defaultBlueprintUrl
+				)
+			) {
+				resolvedBlueprint = await loadPersistentBlueprint(
+					defaultBlueprintUrl!
+				);
+			} else {
+				resolvedBlueprint = await resolveBlueprintFromURL(
+					playgroundUrlWithQueryApiArgs,
+					defaultBlueprintUrl
+				);
+			}
 		} catch (e) {
 			logger.error(
 				'Error resolving blueprint: Blueprint could not be downloaded or loaded.',
@@ -504,25 +512,6 @@ function parseSearchParams(searchParams: URLSearchParams) {
 		params[key] = value.length > 1 ? value : value[0];
 	}
 	return params;
-}
-
-/**
- * Check if the URL contains actionable parameters that should be applied
- * as a blueprint to an existing persistent site.
- */
-function hasActionableUrlParams(url: URL): boolean {
-	const query = url.searchParams;
-	return !!(
-		query.has('plugin') ||
-		query.has('theme') ||
-		query.has('blueprint-url') ||
-		query.has('import-site') ||
-		query.has('import-wxr') ||
-		query.has('import-content') ||
-		query.has('gutenberg-pr') ||
-		query.has('gutenberg-branch') ||
-		query.has('core-pr')
-	);
 }
 
 /**

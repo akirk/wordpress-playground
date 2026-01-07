@@ -14,12 +14,14 @@ import { parseBlueprint } from './router';
 import { OverlayFilesystem, InMemoryFilesystem } from '@wp-playground/storage';
 import { RecommendedPHPVersion } from '@wp-playground/common';
 import { logger } from '@php-wasm/logger';
-// @ts-ignore
-import { corsProxyUrl } from 'virtual:cors-proxy-url';
 
 export type BlueprintSource =
 	| {
 			type: 'remote-url';
+			url: string;
+	  }
+	| {
+			type: 'persistent-blueprint';
 			url: string;
 	  }
 	| {
@@ -78,30 +80,10 @@ export async function resolveBlueprintFromURL(
 		window.self === window.top &&
 		!query.size &&
 		!fragment.length &&
-		defaultBlueprint
+		defaultBlueprint &&
+		!defaultBlueprint.startsWith('/')
 	) {
-		// For local blueprints, fetch and parse directly
-		if (defaultBlueprint.startsWith('/')) {
-			const response = await fetch(defaultBlueprint);
-			const blueprint = await response.json();
-			// Resolve relative URLs in the blueprint
-			const blueprintUrl = new URL(
-				defaultBlueprint,
-				window.location.origin
-			);
-			resolveRelativeUrls(blueprint, blueprintUrl.href);
-
-			// Add browser language detection for persistent boot
-			addBrowserLanguageSteps(blueprint, blueprintUrl.href);
-
-			return {
-				blueprint,
-				source: {
-					type: 'remote-url',
-					url: defaultBlueprint,
-				},
-			};
-		}
+		// Remote default blueprint
 		return {
 			blueprint: await resolveRemoteBlueprint(defaultBlueprint),
 			source: {
@@ -374,159 +356,4 @@ function applyQueryOverridesToDeclaration(
 	}
 
 	return blueprint;
-}
-
-/**
- * Map of browser language codes to WordPress locale codes.
- * Add entries here as new translations become available.
- */
-const browserToWordPressLocale: Record<string, string> = {
-	de: 'de_DE',
-	'de-DE': 'de_DE',
-	'de-AT': 'de_AT',
-	'de-CH': 'de_CH',
-};
-
-/**
- * Languages that have playground-welcome plugin translations available.
- * Maps WordPress locale to the language directory name used by the plugin.
- */
-const availablePluginTranslations: Record<string, string> = {
-	de_DE: 'de',
-	de_AT: 'de',
-	de_CH: 'de',
-};
-
-/**
- * Detects the browser language and adds appropriate language steps to the blueprint.
- * This includes setting the WordPress site language and adding plugin translation files.
- */
-function addBrowserLanguageSteps(
-	blueprint: any,
-	blueprintBaseUrl: string
-): void {
-	const browserLang =
-		navigator.language || (navigator.languages && navigator.languages[0]);
-	if (!browserLang) {
-		return;
-	}
-
-	// Try exact match first, then base language
-	let wpLocale = browserToWordPressLocale[browserLang];
-	if (!wpLocale) {
-		const baseLang = browserLang.split('-')[0];
-		wpLocale = browserToWordPressLocale[baseLang];
-	}
-
-	if (!wpLocale || wpLocale === 'en_US') {
-		return;
-	}
-
-	if (!blueprint.steps) {
-		blueprint.steps = [];
-	}
-
-	// Add setSiteLanguage step at the beginning
-	blueprint.steps.unshift({
-		step: 'setSiteLanguage',
-		language: wpLocale,
-		corsProxy: corsProxyUrl,
-	});
-
-	// Check if we have plugin translations for this language
-	const pluginLangDir = availablePluginTranslations[wpLocale];
-	if (pluginLangDir) {
-		const pluginsBaseUrl = new URL(
-			'../plugins/playground-welcome/',
-			blueprintBaseUrl
-		).href;
-
-		// Find the activatePlugin step to insert translation files before it
-		const activateIndex = blueprint.steps.findIndex(
-			(step: any) => step?.step === 'activatePlugin'
-		);
-		const insertIndex =
-			activateIndex > 0 ? activateIndex : blueprint.steps.length;
-
-		const translationSteps = [
-			{
-				step: 'mkdir',
-				path: '/wordpress/wp-content/plugins/playground-welcome/languages',
-			},
-			{
-				step: 'writeFile',
-				path: `/wordpress/wp-content/plugins/playground-welcome/languages/playground-welcome-${wpLocale}.mo`,
-				data: {
-					resource: 'url',
-					url: `${pluginsBaseUrl}languages/playground-welcome-${wpLocale}.mo`,
-				},
-			},
-			{
-				step: 'mkdir',
-				path: `/wordpress/wp-content/plugins/playground-welcome/${pluginLangDir}`,
-			},
-			{
-				step: 'writeFile',
-				path: `/wordpress/wp-content/plugins/playground-welcome/${pluginLangDir}/welcome-post.html`,
-				data: {
-					resource: 'url',
-					url: `${pluginsBaseUrl}${pluginLangDir}/welcome-post.html`,
-				},
-			},
-		];
-
-		blueprint.steps.splice(insertIndex, 0, ...translationSteps);
-
-		// Also overwrite /tmp/welcome-post.html with the localized version.
-		// The blueprint copies English welcome-post.html to /tmp/ and then uses
-		// runPHP to update the welcome post content. We need to overwrite /tmp/
-		// with the localized version BEFORE that runPHP step runs.
-		const runPhpIndex = blueprint.steps.findIndex(
-			(step: any) =>
-				step?.step === 'runPHP' &&
-				typeof step?.code === 'string' &&
-				step.code.includes('welcome-post.html')
-		);
-		if (runPhpIndex > 0) {
-			blueprint.steps.splice(runPhpIndex, 0, {
-				step: 'writeFile',
-				path: '/tmp/welcome-post.html',
-				data: {
-					resource: 'url',
-					url: `${pluginsBaseUrl}${pluginLangDir}/welcome-post.html`,
-				},
-			});
-		}
-	}
-}
-
-/**
- * Recursively resolves relative URLs in a blueprint object.
- * Finds all { resource: "url", url: "./..." } and converts to absolute URLs.
- */
-function resolveRelativeUrls(obj: any, baseUrl: string): void {
-	if (!obj || typeof obj !== 'object') {
-		return;
-	}
-
-	if (Array.isArray(obj)) {
-		for (const item of obj) {
-			resolveRelativeUrls(item, baseUrl);
-		}
-		return;
-	}
-
-	// Check if this is a URL resource with a relative path
-	if (
-		obj.resource === 'url' &&
-		typeof obj.url === 'string' &&
-		(obj.url.startsWith('./') || obj.url.startsWith('../'))
-	) {
-		obj.url = new URL(obj.url, baseUrl).href;
-	}
-
-	// Recurse into all properties
-	for (const key of Object.keys(obj)) {
-		resolveRelativeUrls(obj[key], baseUrl);
-	}
 }
