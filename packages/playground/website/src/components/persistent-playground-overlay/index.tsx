@@ -164,7 +164,7 @@ export function PersistentPlaygroundOverlay({
 						}
 
 						echo json_encode([
-							'siteName' => get_option('blogname', 'WordPress'),
+							'siteName' => html_entity_decode(get_option('blogname', 'WordPress')),
 							'plugins' => $plugins,
 						]);
 					`,
