@@ -260,8 +260,8 @@ export function PersistentPlaygroundOverlay({
 				<div className={css.bottomRow}>
 					<OverlaySection title="More Playgrounds">
 						<p>
-							Want multiple Playgrounds? Visit
-							playground.wordpress.net for temporary instances.
+							Want multiple Playgrounds? Open temporary instances
+							that reset on refresh.
 						</p>
 						<a
 							href="https://playground.wordpress.net"

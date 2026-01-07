@@ -130,3 +130,10 @@
 	color: #6b7280;
 	line-height: 1.5;
 }
+
+.section p {
+	color: #9ca3af;
+	margin: 0;
+	font-size: clamp(14px, 1.4vw, 15px);
+	line-height: 1.5;
+}
