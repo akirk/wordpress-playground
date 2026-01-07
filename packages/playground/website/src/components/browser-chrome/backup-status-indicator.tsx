@@ -10,8 +10,24 @@ import { Icon, Popover } from '@wordpress/components';
 import { backup, info, check } from '@wordpress/icons';
 import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
 
+function decodeHtmlEntities(text: string): string {
+	return text
+		.replace(/&#(\d+);/g, (_, code) =>
+			String.fromCharCode(parseInt(code, 10))
+		)
+		.replace(/&#x([0-9a-fA-F]+);/g, (_, code) =>
+			String.fromCharCode(parseInt(code, 16))
+		)
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&nbsp;/g, ' ');
+}
+
 function sanitizeForFilename(name: string): string {
-	return name
+	return decodeHtmlEntities(name)
 		.trim()
 		.replace(/['']/g, '') // Remove apostrophes
 		.replace(/[/\\:*?"<>|]/g, '') // Remove filesystem-unsafe characters

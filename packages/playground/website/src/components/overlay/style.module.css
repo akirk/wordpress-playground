@@ -112,7 +112,7 @@
 	width: 100%;
 }
 
-.section:last-child {
+.body > .section:last-child {
 	margin-bottom: 0;
 	padding-bottom: 32px;
 }
