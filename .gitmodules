@@ -1,3 +1,6 @@
 [submodule "isomorphic-git"]
     path="isomorphic-git"
     url=https://github.com/adamziel/isomorphic-git.git
+[submodule "packages/playground/website/public/plugins/playground-welcome"]
+	path = packages/playground/website/public/plugins/playground-welcome
+	url = git@github.com:akirk/playground-welcome.git

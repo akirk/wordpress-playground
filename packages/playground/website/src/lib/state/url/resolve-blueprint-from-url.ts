@@ -88,6 +88,10 @@ export async function resolveBlueprintFromURL(
 				window.location.origin
 			);
 			resolveRelativeUrls(blueprint, blueprintUrl.href);
+
+			// Add browser language detection for persistent boot
+			addBrowserLanguageSteps(blueprint, blueprintUrl.href);
+
 			return {
 				blueprint,
 				source: {
@@ -368,6 +372,108 @@ function applyQueryOverridesToDeclaration(
 	}
 
 	return blueprint;
+}
+
+/**
+ * Map of browser language codes to WordPress locale codes.
+ * Add entries here as new translations become available.
+ */
+const browserToWordPressLocale: Record<string, string> = {
+	de: 'de_DE',
+	'de-DE': 'de_DE',
+	'de-AT': 'de_AT',
+	'de-CH': 'de_CH',
+};
+
+/**
+ * Languages that have playground-welcome plugin translations available.
+ * Maps WordPress locale to the language directory name used by the plugin.
+ */
+const availablePluginTranslations: Record<string, string> = {
+	de_DE: 'de',
+	de_AT: 'de',
+	de_CH: 'de',
+};
+
+/**
+ * Detects the browser language and adds appropriate language steps to the blueprint.
+ * This includes setting the WordPress site language and adding plugin translation files.
+ */
+function addBrowserLanguageSteps(
+	blueprint: any,
+	blueprintBaseUrl: string
+): void {
+	const browserLang =
+		navigator.language || (navigator.languages && navigator.languages[0]);
+	if (!browserLang) {
+		return;
+	}
+
+	// Try exact match first, then base language
+	let wpLocale = browserToWordPressLocale[browserLang];
+	if (!wpLocale) {
+		const baseLang = browserLang.split('-')[0];
+		wpLocale = browserToWordPressLocale[baseLang];
+	}
+
+	if (!wpLocale || wpLocale === 'en_US') {
+		return;
+	}
+
+	if (!blueprint.steps) {
+		blueprint.steps = [];
+	}
+
+	// Add setSiteLanguage step at the beginning
+	blueprint.steps.unshift({
+		step: 'setSiteLanguage',
+		language: wpLocale,
+	});
+
+	// Check if we have plugin translations for this language
+	const pluginLangDir = availablePluginTranslations[wpLocale];
+	if (pluginLangDir) {
+		const pluginsBaseUrl = new URL(
+			'../plugins/playground-welcome/',
+			blueprintBaseUrl
+		).href;
+
+		// Find the activatePlugin step to insert translation files before it
+		const activateIndex = blueprint.steps.findIndex(
+			(step: any) => step?.step === 'activatePlugin'
+		);
+		const insertIndex =
+			activateIndex > 0 ? activateIndex : blueprint.steps.length;
+
+		const translationSteps = [
+			{
+				step: 'mkdir',
+				path: '/wordpress/wp-content/plugins/playground-welcome/languages',
+			},
+			{
+				step: 'writeFile',
+				path: `/wordpress/wp-content/plugins/playground-welcome/languages/playground-welcome-${wpLocale}.mo`,
+				data: {
+					resource: 'url',
+					url: `${pluginsBaseUrl}languages/playground-welcome-${wpLocale}.mo`,
+				},
+			},
+			{
+				step: 'mkdir',
+				path: `/wordpress/wp-content/plugins/playground-welcome/${pluginLangDir}`,
+			},
+			{
+				step: 'writeFile',
+				path: `/wordpress/wp-content/plugins/playground-welcome/${pluginLangDir}/welcome-post.html`,
+				data: {
+					resource: 'url',
+					url: `${pluginsBaseUrl}${pluginLangDir}/welcome-post.html`,
+				},
+			},
+		];
+
+		blueprint.steps.splice(insertIndex, 0, ...translationSteps);
+	}
 }
 
 /**
