@@ -1,15 +1,17 @@
 // @ts-ignore
 import { corsProxyUrl } from 'virtual:cors-proxy-url';
+import type { StepDefinition } from '@wp-playground/client';
 
 /**
- * Map of browser language codes to WordPress locale codes.
+ * Converts a browser language code to a WordPress locale code.
+ * Examples: 'pl' -> 'pl_PL', 'de-AT' -> 'de_AT', 'en-US' -> 'en_US'
  */
-const browserToWordPressLocale: Record<string, string> = {
-	de: 'de_DE',
-	'de-DE': 'de_DE',
-	'de-AT': 'de_AT',
-	'de-CH': 'de_CH',
-};
+function browserLangToWpLocale(browserLang: string): string {
+	const parts = browserLang.split('-');
+	const lang = parts[0].toLowerCase();
+	const country = parts[1]?.toUpperCase() || lang.toUpperCase();
+	return `${lang}_${country}`;
+}
 
 interface TranslationsManifest {
 	available: Record<string, { contentDir?: string }>;
@@ -55,14 +57,8 @@ export async function addBrowserLanguageSteps(
 		return;
 	}
 
-	// Try exact match first, then base language
-	let wpLocale = browserToWordPressLocale[browserLang];
-	if (!wpLocale) {
-		const baseLang = browserLang.split('-')[0];
-		wpLocale = browserToWordPressLocale[baseLang];
-	}
-
-	if (!wpLocale || wpLocale === 'en_US') {
+	const wpLocale = browserLangToWpLocale(browserLang);
+	if (wpLocale === 'en_US') {
 		return;
 	}
 
@@ -70,26 +66,22 @@ export async function addBrowserLanguageSteps(
 		blueprint.steps = [];
 	}
 
-	// Add setSiteLanguage step at the beginning
 	blueprint.steps.unshift({
 		step: 'setSiteLanguage',
 		language: wpLocale,
 		corsProxy: corsProxyUrl,
 	});
 
-	// Fetch the translations manifest to determine available translations
 	const manifest = await fetchTranslationsManifest(blueprintBaseUrl);
 	if (!manifest) {
 		return;
 	}
 
-	// Resolve the locale - check if available directly or via fallback
 	let resolvedLocale = wpLocale;
 	if (!manifest.available[wpLocale]) {
 		if (manifest.fallbacks[wpLocale]) {
 			resolvedLocale = manifest.fallbacks[wpLocale];
 		} else {
-			// No translation available for this locale
 			return;
 		}
 	}
@@ -111,14 +103,14 @@ export async function addBrowserLanguageSteps(
 	const insertIndex =
 		activateIndex > 0 ? activateIndex : blueprint.steps.length;
 
-	const translationSteps = [
+	const translationSteps: StepDefinition[] = [
 		{
 			step: 'mkdir',
 			path: '/wordpress/wp-content/plugins/playground-welcome/languages',
 		},
 		{
 			step: 'writeFile',
-			path: `/wordpress/wp-content/plugins/playground-welcome/languages/playground-welcome-${resolvedLocale}.mo`,
+			path: `/wordpress/wp-content/plugins/playground-welcome/languages/playground-welcome-${wpLocale}.mo`,
 			data: {
 				resource: 'url',
 				url: `${pluginsBaseUrl}languages/playground-welcome-${resolvedLocale}.mo`,
