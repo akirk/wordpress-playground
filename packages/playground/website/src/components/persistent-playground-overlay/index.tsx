@@ -116,6 +116,27 @@ const pluginBlueprints: PluginBlueprint[] = [
 			],
 		},
 	},
+	{
+		title: 'Chat to Blog',
+		description: 'Import media from Beeper chats and create blog posts',
+		blueprint: {
+			landingPage: '/wp-admin/admin.php?page=chat-to-blog',
+			steps: [
+				{
+					step: 'unzip',
+					zipFile: {
+						resource: 'url',
+						url: 'https://alex.kirk.at/wp-content/uploads/sites/2/chat-to-blog.zip',
+					},
+					extractToPath: '/wordpress/wp-content/plugins',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath: 'chat-to-blog/chat-to-blog.php',
+				},
+			],
+		},
+	},
 ];
 
 interface PersistentPlaygroundOverlayProps {

@@ -37,6 +37,16 @@
 		{
 			"step": "activatePlugin",
 			"pluginPath": "playground-welcome/playground-welcome.php"
+		},
+		{
+			"step": "installPlugin",
+			"pluginData": {
+				"resource": "wordpress.org/plugins",
+				"slug": "my-apps"
+			},
+			"options": {
+				"activate": true
+			}
 		}
 	]
 }
