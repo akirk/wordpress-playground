@@ -2,6 +2,7 @@ import type { StepHandler } from '.';
 import { unzipFile } from '@wp-playground/common';
 import { logger } from '@php-wasm/logger';
 import { Semaphore } from '@php-wasm/util';
+import { fetchWithCorsProxy } from '@php-wasm/web';
 /**
  * @inheritDoc setSiteLanguage
  * @hasRunnableExample
@@ -18,6 +19,8 @@ export interface SetSiteLanguageStep {
 	step: 'setSiteLanguage';
 	/** The language to set, e.g. 'en_US' */
 	language: string;
+	/** Optional CORS proxy URL for fetching translations */
+	corsProxy?: string;
 }
 
 /**
@@ -29,10 +32,13 @@ export interface SetSiteLanguageStep {
  */
 export const getWordPressTranslationUrl = async (
 	wpVersion: string,
-	language: string
+	language: string,
+	corsProxy?: string
 ): Promise<string> => {
-	const languageTranslations = await fetch(
-		`https://api.wordpress.org/translations/core/1.0/?version=${wpVersion}`
+	const languageTranslations = await fetchWithCorsProxy(
+		`https://api.wordpress.org/translations/core/1.0/?version=${wpVersion}`,
+		undefined,
+		corsProxy
 	);
 	const languageTranslationsJson = await languageTranslations.json();
 	const languageTranslation = languageTranslationsJson.translations.find(
@@ -54,7 +60,7 @@ export const getWordPressTranslationUrl = async (
  */
 export const setSiteLanguage: StepHandler<SetSiteLanguageStep> = async (
 	playground,
-	{ language },
+	{ language, corsProxy },
 	progress
 ) => {
 	progress?.tracker.setCaption(progress?.initialCaption || 'Translating');
@@ -74,7 +80,11 @@ export const setSiteLanguage: StepHandler<SetSiteLanguageStep> = async (
 
 	const translations = [
 		{
-			url: await getWordPressTranslationUrl(wpVersion, language),
+			url: await getWordPressTranslationUrl(
+				wpVersion,
+				language,
+				corsProxy
+			),
 			type: 'core',
 		},
 	];
@@ -150,7 +160,11 @@ export const setSiteLanguage: StepHandler<SetSiteLanguageStep> = async (
 	const translationsQueue = translations.map(({ url, type }) =>
 		fetchQueue.run(async () => {
 			try {
-				const response = await fetch(url);
+				const response = await fetchWithCorsProxy(
+					url,
+					undefined,
+					corsProxy
+				);
 				if (!response.ok) {
 					throw new Error(
 						`Failed to download translations for ${type}: ${response.statusText}`
@@ -185,7 +199,7 @@ export const setSiteLanguage: StepHandler<SetSiteLanguageStep> = async (
 				 */
 				if (type === 'core') {
 					throw new Error(
-						`Failed to download translations for WordPress. Please check if the language code ${language} is correct. You can find all available languages and translations on https://translate.wordpress.org/.`
+						`Failed to download translations for WordPress. Please check if the language code ${language} is correct. You can find all available languages and translations on https://translate.wordpress.org/. Original error: ${error}`
 					);
 				}
 				/**

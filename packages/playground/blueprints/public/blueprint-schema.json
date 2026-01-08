@@ -1434,6 +1434,10 @@
 						"language": {
 							"type": "string",
 							"description": "The language to set, e.g. 'en_US'"
+						},
+						"corsProxy": {
+							"type": "string",
+							"description": "Optional CORS proxy URL for fetching translations"
 						}
 					},
 					"required": ["language", "step"]

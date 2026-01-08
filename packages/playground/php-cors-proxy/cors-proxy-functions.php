@@ -27,7 +27,45 @@ function get_current_script_uri($targetUrl, $request_uri)
     return substr($request_uri, 0, -strlen($targetUrl));
 }
 
-function url_validate_and_resolve($url, $resolve_function='gethostbynamel') {
+/**
+ * Resolves a hostname to both IPv4 and IPv6 addresses.
+ * Returns an array of IP addresses or false if resolution fails.
+ */
+function resolve_host_ips($host) {
+    $ips = [];
+
+    // Try to get AAAA (IPv6) records first - prefer IPv6
+    $ipv6_records = @dns_get_record($host, DNS_AAAA);
+    if ($ipv6_records) {
+        foreach ($ipv6_records as $record) {
+            if (isset($record['ipv6'])) {
+                $ips[] = $record['ipv6'];
+            }
+        }
+    }
+
+    // Also get A (IPv4) records as fallback
+    $ipv4_records = @dns_get_record($host, DNS_A);
+    if ($ipv4_records) {
+        foreach ($ipv4_records as $record) {
+            if (isset($record['ip'])) {
+                $ips[] = $record['ip'];
+            }
+        }
+    }
+
+    // Fallback to gethostbynamel if dns_get_record fails
+    if (empty($ips)) {
+        $ipv4_ips = gethostbynamel($host);
+        if ($ipv4_ips) {
+            $ips = $ipv4_ips;
+        }
+    }
+
+    return empty($ips) ? false : $ips;
+}
+
+function url_validate_and_resolve($url, $resolve_function='resolve_host_ips') {
     if (!filter_var($url, FILTER_VALIDATE_URL)) {
         throw new CorsProxyException("Invalid URL: " . $url);
     }

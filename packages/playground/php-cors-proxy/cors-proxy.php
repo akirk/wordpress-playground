@@ -15,15 +15,17 @@ if (file_exists($config_file)) {
 $server_host = $_SERVER['HTTP_HOST'] ?? '';
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
+// Identify this response as coming from the legitimate CORS proxy.
+// Network firewalls may intercept requests and return error responses
+// without this header, allowing clients to detect interference.
+// This header is always sent regardless of CORS requirements.
+header('X-Playground-Cors-Proxy: true');
+
 if (should_respond_with_cors_headers($server_host, $origin)) {
     header('Access-Control-Allow-Origin: ' . $origin);
     header('Access-Control-Allow-Credentials: true');
     header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
     header('Access-Control-Allow-Headers: Accept, Authorization, Content-Type, git-protocol, wp_blog, wp_install, x-cors-proxy-allowed-request-headers');
-    // Identify this response as coming from the legitimate CORS proxy.
-    // Network firewalls may intercept requests and return error responses
-    // without this header, allowing clients to detect interference.
-    header('X-Playground-Cors-Proxy: true');
     header('Access-Control-Expose-Headers: X-Playground-Cors-Proxy');
 }
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -211,8 +213,14 @@ curl_setopt(
         }
 
         if ($name === 'transfer-encoding' && stripos($value, 'chunked') !== false) {
-            $is_chunked_response = true;
-            header($header, false);
+            // When running under PHP CLI server, don't use chunked encoding at all.
+            // The CLI server doesn't handle chunked encoding well when behind a proxy
+            // like Vite, causing parse errors. Let the CLI server buffer and send
+            // the response as a normal (non-chunked) response instead.
+            if (php_sapi_name() !== 'cli-server') {
+                $is_chunked_response = true;
+                header($header, false);
+            }
             return $len;
         }
 
@@ -274,8 +282,6 @@ if (!curl_exec($ch)) {
 } else {
     @$relay_http_code_and_initial_headers_if_not_already_sent();
 }
-// Close cURL session
-curl_close($ch);
 
 // Only send chunked transfer encoding footer if we're using chunked encoding.
 // We need to manually send the footer when running in the PHP built-in server

@@ -1174,6 +1174,11 @@ const schema11 = {
 							type: 'string',
 							description: "The language to set, e.g. 'en_US'",
 						},
+						corsProxy: {
+							type: 'string',
+							description:
+								'Optional CORS proxy URL for fetching translations',
+						},
 					},
 					required: ['language', 'step'],
 				},
@@ -4878,6 +4883,11 @@ const schema29 = {
 				language: {
 					type: 'string',
 					description: "The language to set, e.g. 'en_US'",
+				},
+				corsProxy: {
+					type: 'string',
+					description:
+						'Optional CORS proxy URL for fetching translations',
 				},
 			},
 			required: ['language', 'step'],
@@ -19464,7 +19474,8 @@ function validate24(
 											!(
 												key65 === 'progress' ||
 												key65 === 'step' ||
-												key65 === 'language'
+												key65 === 'language' ||
+												key65 === 'corsProxy'
 											)
 										) {
 											validate24.errors = [
@@ -19714,6 +19725,41 @@ function validate24(
 														_errs501 === errors;
 												} else {
 													var valid105 = true;
+												}
+												if (valid105) {
+													if (
+														data.corsProxy !==
+														undefined
+													) {
+														const _errs503 = errors;
+														if (
+															typeof data.corsProxy !==
+															'string'
+														) {
+															validate24.errors =
+																[
+																	{
+																		instancePath:
+																			instancePath +
+																			'/corsProxy',
+																		schemaPath:
+																			'#/oneOf/28/properties/corsProxy/type',
+																		keyword:
+																			'type',
+																		params: {
+																			type: 'string',
+																		},
+																		message:
+																			'must be string',
+																	},
+																];
+															return false;
+														}
+														var valid105 =
+															_errs503 === errors;
+													} else {
+														var valid105 = true;
+													}
 												}
 											}
 										}

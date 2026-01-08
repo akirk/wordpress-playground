@@ -23,20 +23,12 @@
 			}
 		},
 		{
-			"step": "mkdir",
-			"path": "/tmp"
-		},
-		{
 			"step": "writeFile",
-			"path": "/tmp/welcome-post.html",
+			"path": "/wordpress/wp-content/plugins/playground-welcome/welcome-post.html",
 			"data": {
 				"resource": "url",
 				"url": "../plugins/playground-welcome/welcome-post.html"
 			}
-		},
-		{
-			"step": "runPHP",
-			"code": "<?php require '/wordpress/wp-load.php'; add_filter('wp_kses_allowed_html', function($tags) { $tags['svg'] = ['viewbox' => true, 'xmlns' => true, 'width' => true, 'height' => true, 'aria-hidden' => true, 'focusable' => true, 'style' => true]; $tags['path'] = ['d' => true, 'fill-rule' => true, 'clip-rule' => true]; return $tags; }, 10, 1); $post = get_post(1); if ($post) { wp_update_post(['ID' => $post->ID, 'post_title' => 'Welcome to Your WordPress', 'post_content' => file_get_contents('/tmp/welcome-post.html'), 'post_name' => 'welcome-to-your-wordpress']); }"
 		},
 		{
 			"step": "runPHP",
