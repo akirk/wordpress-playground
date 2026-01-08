@@ -18,6 +18,7 @@ import { ActiveSiteSettingsForm } from '../site-manager/site-settings-form';
 import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
 import { SiteManagerIcon } from '@wp-playground/components';
 import { SavedPlaygroundsOverlay } from '../saved-playgrounds-overlay';
+import { PersistentPlaygroundOverlay } from '../persistent-playground-overlay';
 import { SaveStatusIndicator } from './save-status-indicator';
 import { BackupStatusIndicator } from './backup-status-indicator';
 import { defaultStorageType } from 'virtual:website-defaults';
@@ -189,9 +190,16 @@ export default function BrowserChrome({
 				</header>
 				<div className={css.content}>{children}</div>
 			</div>
-			{isPlaygroundsOverlayOpen && (
-				<SavedPlaygroundsOverlay onClose={closePlaygroundsOverlay} />
-			)}
+			{isPlaygroundsOverlayOpen &&
+				(defaultStorageType === 'opfs' ? (
+					<PersistentPlaygroundOverlay
+						onClose={closePlaygroundsOverlay}
+					/>
+				) : (
+					<SavedPlaygroundsOverlay
+						onClose={closePlaygroundsOverlay}
+					/>
+				))}
 		</div>
 	);
 }

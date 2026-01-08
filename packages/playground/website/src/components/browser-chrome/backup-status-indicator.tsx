@@ -2,20 +2,9 @@ import { useState, useRef } from 'react';
 import css from './save-status-indicator.module.css';
 import classNames from 'classnames';
 import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
-import { usePlaygroundClient } from '../../lib/use-playground-client';
-import { zipWpContent } from '@wp-playground/client';
-import saveAs from 'file-saver';
-import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
 import { Icon, Popover } from '@wordpress/components';
 import { backup, info, check } from '@wordpress/icons';
 import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
-
-function formatBackupFilename(): string {
-	const now = new Date();
-	const date = now.toISOString().slice(0, 10);
-	const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
-	return `playground-backup-${date}-${time}.zip`;
-}
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -30,13 +19,15 @@ function isSameDay(timestamp1: number, timestamp2: number): boolean {
 export function BackupStatusIndicator() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
-	const playground = usePlaygroundClient();
-	const [isBackingUp, setIsBackingUp] = useState(false);
 	const [showInfoPopover, setShowInfoPopover] = useState(false);
 	const infoButtonRef = useRef<HTMLButtonElement>(null);
 
-	const { lastBackupDate, lastAccessDate, whenCreated } =
-		activeSite?.metadata || {};
+	const {
+		backupHistory = [],
+		lastAccessDate,
+		whenCreated,
+	} = activeSite?.metadata || {};
+	const lastBackupDate = backupHistory[0]?.timestamp;
 
 	// Only show backup indicator if user has returned after creation day
 	const hasReturnedAfterCreation =
@@ -48,30 +39,6 @@ export function BackupStatusIndicator() {
 		!lastBackupDate ||
 		(lastAccessDate && !isSameDay(lastBackupDate, lastAccessDate));
 
-	const handleBackup = async () => {
-		if (!playground || isBackingUp) return;
-
-		setIsBackingUp(true);
-		try {
-			const bytes = await zipWpContent(playground, {
-				selfContained: true,
-			});
-			const filename = formatBackupFilename();
-			saveAs(new File([bytes], filename));
-
-			if (activeSite) {
-				await dispatch(
-					updateSiteMetadata({
-						slug: activeSite.slug,
-						changes: { lastBackupDate: Date.now() },
-					})
-				);
-			}
-		} finally {
-			setIsBackingUp(false);
-		}
-	};
-
 	const handleOpenSettings = () => {
 		setShowInfoPopover(false);
 		dispatch(setSiteManagerOpen(true));
@@ -80,15 +47,6 @@ export function BackupStatusIndicator() {
 	// Hide on first day - no need to prompt for backup yet
 	if (!hasReturnedAfterCreation) {
 		return null;
-	}
-
-	if (isBackingUp) {
-		return (
-			<div className={classNames(css.indicator, css.saving)}>
-				<span className={css.spinner} />
-				<span className={css.label}>Backing up...</span>
-			</div>
-		);
 	}
 
 	// Backup is current - show green checkmark
@@ -107,9 +65,8 @@ export function BackupStatusIndicator() {
 		<div className={classNames(css.indicator, css.unsaved)}>
 			<button
 				className={css.saveButton}
-				onClick={handleBackup}
+				onClick={handleOpenSettings}
 				type="button"
-				disabled={!playground}
 			>
 				<Icon icon={backup} size={16} />
 				Backup
