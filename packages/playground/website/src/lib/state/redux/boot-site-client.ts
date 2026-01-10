@@ -45,6 +45,11 @@ import {
 	shouldShowGitHubAuthModal,
 } from '../../../github/git-auth-helpers';
 import { findFirewallErrorInCauseChain } from './error-utils';
+import {
+	initTabCoordinator,
+	checkForExistingTabs,
+	requestStaleTabsShutdown,
+} from './tab-coordinator';
 
 export function bootSiteClient(
 	siteSlug: string,
@@ -123,6 +128,84 @@ export function bootSiteClient(
 		}
 
 		logTrackingEvent('load');
+
+		// Initialize tab coordinator for multi-tab detection
+		// Only for persistent sites - temporary sites don't need coordination
+		if (site.metadata.storage !== 'none') {
+			initTabCoordinator(site.slug, (reason) => {
+				// This callback is called when another tab requests we shut down
+				dispatch(
+					setActiveSiteError({
+						error: 'tab-superseded',
+						details: new Error(reason),
+					})
+				);
+			});
+
+			const { existingTabs, hasFreshTab, hasStaleTab } =
+				await checkForExistingTabs(site.slug);
+
+			if (hasStaleTab) {
+				// Request stale tabs (> 1 day old) to shut down
+				requestStaleTabsShutdown(existingTabs);
+			}
+
+			if (hasFreshTab) {
+				// A fresh tab (< 1 day old) already has this site open.
+				// Instead of spawning a new PHP worker, just load the iframe
+				// directly - the existing service worker will serve the request.
+				const remoteUrl = getRemoteUrl();
+				const scopedUrl = new URL(
+					`/scope:${encodeURIComponent(site.slug)}/`,
+					remoteUrl
+				);
+
+				// Add landing page from site metadata or URL parameter
+				const urlParams = new URLSearchParams(window.location.search);
+				const landingPage =
+					urlParams.get('url') ||
+					site.metadata.lastUrl ||
+					'/wp-admin/';
+				scopedUrl.pathname += landingPage.replace(/^\//, '');
+
+				iframe.src = scopedUrl.toString();
+
+				// Track site access even in passive mode
+				const now = Date.now();
+				const lastAccess = site.metadata.lastAccessDate;
+				const isNewDay =
+					!lastAccess ||
+					new Date(lastAccess).toDateString() !==
+						new Date(now).toDateString();
+
+				const changes: {
+					lastAccessDate: number;
+					daysUsedSinceLastBackup?: number;
+				} = {
+					lastAccessDate: now,
+				};
+
+				if (isNewDay) {
+					changes.daysUsedSinceLastBackup =
+						(site.metadata.daysUsedSinceLastBackup || 0) + 1;
+				}
+
+				dispatch(
+					updateSiteMetadata({
+						slug: site.slug,
+						changes,
+					})
+				);
+
+				// Note: In passive mode, we don't have a PlaygroundClient.
+				// The UI should handle this gracefully (backup buttons etc. won't work).
+				// The user can close the other tab if they need full functionality.
+				logger.info(
+					'Playground running in passive mode - reusing existing service worker from another tab'
+				);
+				return;
+			}
+		}
 
 		// Check for pending URL blueprint from redux (set by resolveSiteFromUrl)
 		const pendingBlueprint = selectPendingUrlBlueprint(getState());

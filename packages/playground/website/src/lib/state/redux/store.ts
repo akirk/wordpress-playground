@@ -13,6 +13,7 @@ import { PlaygroundRoute, redirectTo } from '../url/router';
 import type { ClientInfo } from './slice-clients';
 import clientsReducer, { selectAllClientInfo } from './slice-clients';
 import { useDispatch, useSelector } from 'react-redux';
+import { initCrossTabSync } from './cross-tab-sync';
 
 // NOTE: A GetDefaultMiddleware type is not exported from @reduxjs/toolkit,
 // so we have to derive it from the configureStore() signature.
@@ -64,6 +65,9 @@ const store = configureStore({
 			listenToOnlineOfflineEventsMiddleware
 		),
 });
+
+// Initialize cross-tab sync for metadata updates
+initCrossTabSync(store.dispatch);
 
 export type RootState = ReturnType<typeof store.getState>;
 
