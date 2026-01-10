@@ -1,6 +1,6 @@
 {
 	"$schema": "https://playground.wordpress.net/blueprint-schema.json",
-	"landingPage": "/wp-admin/admin.php?page=playground-welcome",
+	"landingPage": "/wp-admin/tools.php?page=playground-welcome",
 	"steps": [
 		{
 			"step": "mkdir",
