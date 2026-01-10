@@ -137,6 +137,29 @@ const pluginBlueprints: PluginBlueprint[] = [
 			],
 		},
 	},
+	{
+		title: 'AI Assistant',
+		description:
+			'AI-powered chat interface to modify your WordPress to your liking',
+		blueprint: {
+			landingPage: '/wp-admin/admin.php?page=ai-assistant-settings',
+			steps: [
+				{
+					step: 'unzip',
+					zipFile: {
+						resource: 'url',
+						url: 'https://alex.kirk.at/wp-content/uploads/sites/2/playground-ai-assistant.zip',
+					},
+					extractToPath: '/wordpress/wp-content/plugins',
+				},
+				{
+					step: 'activatePlugin',
+					pluginPath:
+						'playground-ai-assistant/playground-ai-assistant.php',
+				},
+			],
+		},
+	},
 ];
 
 interface PersistentPlaygroundOverlayProps {

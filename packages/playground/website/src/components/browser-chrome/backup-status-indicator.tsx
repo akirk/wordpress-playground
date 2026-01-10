@@ -1,9 +1,8 @@
-import { useState, useRef } from 'react';
 import css from './save-status-indicator.module.css';
 import classNames from 'classnames';
 import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
-import { Icon, Popover } from '@wordpress/components';
-import { backup, info, check } from '@wordpress/icons';
+import { Icon } from '@wordpress/components';
+import { backup } from '@wordpress/icons';
 import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
@@ -16,18 +15,28 @@ function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	);
 }
 
+function formatUsageDays(days: number): string {
+	if (days === 1) return '1 day since backup';
+	return `${days} days since backup`;
+}
+
+type BackupUrgency = 'current' | 'due' | 'overdue';
+
+function getBackupUrgency(daysUsed: number): BackupUrgency {
+	if (daysUsed <= 1) return 'current';
+	if (daysUsed <= 4) return 'due';
+	return 'overdue';
+}
+
 export function BackupStatusIndicator() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
-	const [showInfoPopover, setShowInfoPopover] = useState(false);
-	const infoButtonRef = useRef<HTMLButtonElement>(null);
 
 	const {
-		backupHistory = [],
 		lastAccessDate,
 		whenCreated,
+		daysUsedSinceLastBackup = 0,
 	} = activeSite?.metadata || {};
-	const lastBackupDate = backupHistory[0]?.timestamp;
 
 	// Only show backup indicator if user has returned after creation day
 	const hasReturnedAfterCreation =
@@ -35,12 +44,7 @@ export function BackupStatusIndicator() {
 		lastAccessDate &&
 		!isSameDay(whenCreated, lastAccessDate);
 
-	const needsBackup =
-		!lastBackupDate ||
-		(lastAccessDate && !isSameDay(lastBackupDate, lastAccessDate));
-
 	const handleOpenSettings = () => {
-		setShowInfoPopover(false);
 		dispatch(setSiteManagerOpen(true));
 	};
 
@@ -49,65 +53,27 @@ export function BackupStatusIndicator() {
 		return null;
 	}
 
-	// Backup is current - show green checkmark
-	if (!needsBackup) {
-		return (
-			<div
-				className={classNames(css.indicator, css.saved)}
-				title="Backed up"
-			>
-				<Icon icon={check} size={18} />
-			</div>
-		);
+	// Hide if no usage since last backup (or site is new with 0 days tracked)
+	if (daysUsedSinceLastBackup === 0) {
+		return null;
 	}
 
+	const urgency = getBackupUrgency(daysUsedSinceLastBackup);
+	const buttonText = formatUsageDays(daysUsedSinceLastBackup);
+	const tooltipText =
+		'Your Playground is stored in this browser. Browser data can be cleared unexpectedly, so regular backups keep your work safe.';
+
 	return (
-		<div className={classNames(css.indicator, css.unsaved)}>
+		<div className={classNames(css.indicator, css[urgency])}>
 			<button
-				className={css.saveButton}
+				className={classNames(css.saveButton, css[`${urgency}Button`])}
 				onClick={handleOpenSettings}
 				type="button"
+				title={tooltipText}
 			>
 				<Icon icon={backup} size={16} />
-				Backup
+				{buttonText}
 			</button>
-			<button
-				ref={infoButtonRef}
-				className={css.infoButton}
-				onClick={() => setShowInfoPopover(!showInfoPopover)}
-				type="button"
-				aria-label="Why backup?"
-			>
-				<Icon icon={info} size={18} />
-			</button>
-			{showInfoPopover && (
-				<Popover
-					anchor={infoButtonRef.current}
-					placement="bottom-end"
-					onClose={() => setShowInfoPopover(false)}
-					className={css.infoPopover}
-				>
-					<div className={css.infoPopoverContent}>
-						<h4>Why backup?</h4>
-						<p>
-							Your Playground is stored in this browser. Browser
-							data can be cleared unexpectedly, so regular backups
-							keep your work safe.
-						</p>
-						<p>
-							To restore a backup, open Settings and use "Import
-							backup".
-						</p>
-						<button
-							className={css.infoPopoverLink}
-							onClick={handleOpenSettings}
-							type="button"
-						>
-							Open Settings
-						</button>
-					</div>
-				</Popover>
-			)}
 		</div>
 	);
 }
