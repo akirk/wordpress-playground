@@ -83,10 +83,6 @@ const pluginBlueprints: PluginBlueprint[] = [
 					pluginPath:
 						'contact-sync-personal-crm/contact-sync-personal-crm.php',
 				},
-				{
-					step: 'activatePlugin',
-					pluginPath: 'a8c-team/a8c-team.php',
-				},
 			],
 		},
 	},
@@ -140,7 +136,7 @@ const pluginBlueprints: PluginBlueprint[] = [
 	{
 		title: 'AI Assistant',
 		description:
-			'AI-powered chat interface to modify your WordPress to your liking',
+			'AI-powered chat interface to modify your WordPress to your liking. Bring your own key or use a local LLM',
 		blueprint: {
 			steps: [
 				{
