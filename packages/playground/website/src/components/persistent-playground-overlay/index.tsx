@@ -142,7 +142,6 @@ const pluginBlueprints: PluginBlueprint[] = [
 		description:
 			'AI-powered chat interface to modify your WordPress to your liking',
 		blueprint: {
-			landingPage: '/wp-admin/admin.php?page=ai-assistant-settings',
 			steps: [
 				{
 					step: 'unzip',

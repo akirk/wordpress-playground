@@ -282,13 +282,11 @@ export function bootSiteClient(
 				constants: site.metadata.runtimeConfiguration.constants,
 				// Auto-login and restore the user's last position
 				login: true,
-				// Use URL param or additional landing page if present, otherwise restore last URL (only if no additional steps)
+				// Use URL param or blueprint landing page if present, otherwise restore last URL
 				landingPage:
 					urlParamLandingPage ||
 					additionalLandingPage ||
-					(additionalSteps.length === 0
-						? site.metadata.lastUrl
-						: undefined),
+					site.metadata.lastUrl,
 				// Include additional steps from blueprint if present
 				...(additionalSteps.length > 0 && { steps: additionalSteps }),
 			};
