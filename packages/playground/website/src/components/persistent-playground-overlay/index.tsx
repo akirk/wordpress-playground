@@ -159,6 +159,25 @@ const pluginBlueprints: PluginBlueprint[] = [
 			],
 		},
 	},
+	{
+		title: 'App Launcher',
+		description: 'Adds an app launcher to your WordPress',
+		blueprint: {
+			landingPage: '/wp-admin/options-general.php?page=my-apps',
+			steps: [
+				{
+					step: 'installPlugin',
+					pluginData: {
+						resource: 'wordpress.org/plugins',
+						slug: 'my-apps',
+					},
+					options: {
+						activate: true,
+					},
+				},
+			],
+		},
+	},
 ];
 
 interface PersistentPlaygroundOverlayProps {
