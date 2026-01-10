@@ -103,7 +103,10 @@ export function BackupReminder({ wpSiteName }: BackupReminderProps = {}) {
 			await dispatch(
 				updateSiteMetadata({
 					slug: activeSite.slug,
-					changes: { backupHistory: newHistory },
+					changes: {
+						backupHistory: newHistory,
+						daysUsedSinceLastBackup: 0,
+					},
 				})
 			);
 		} finally {

@@ -352,10 +352,29 @@ export function bootSiteClient(
 
 		// Track site access for persistent sites (used for backup reminders)
 		if (site.metadata.storage !== 'none') {
+			const now = Date.now();
+			const lastAccess = site.metadata.lastAccessDate;
+			const isNewDay =
+				!lastAccess ||
+				new Date(lastAccess).toDateString() !==
+					new Date(now).toDateString();
+
+			const changes: {
+				lastAccessDate: number;
+				daysUsedSinceLastBackup?: number;
+			} = {
+				lastAccessDate: now,
+			};
+
+			if (isNewDay) {
+				changes.daysUsedSinceLastBackup =
+					(site.metadata.daysUsedSinceLastBackup || 0) + 1;
+			}
+
 			dispatch(
 				updateSiteMetadata({
 					slug: site.slug,
-					changes: { lastAccessDate: Date.now() },
+					changes,
 				})
 			);
 		}

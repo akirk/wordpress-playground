@@ -569,6 +569,12 @@ export interface SiteMetadata {
 	 */
 	lastAccessDate?: number;
 
+	/**
+	 * Number of distinct days the user has accessed this site since the last backup.
+	 * Reset to 0 when a backup is made.
+	 */
+	daysUsedSinceLastBackup?: number;
+
 	// @TODO: Accept any string as a php version?
 	runtimeConfiguration: RuntimeConfiguration;
 	originalBlueprint: BlueprintV1;
