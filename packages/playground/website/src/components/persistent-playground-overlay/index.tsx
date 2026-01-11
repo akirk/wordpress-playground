@@ -192,7 +192,6 @@ export function PersistentPlaygroundOverlay({
 	const [activePlugins, setActivePlugins] = useState<string[]>([]);
 	const [isLoadingPlugins, setIsLoadingPlugins] = useState(true);
 	const [pluginNames, setPluginNames] = useState<Record<string, string>>({});
-	const [wpSiteName, setWpSiteName] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!playground) {
@@ -230,7 +229,6 @@ export function PersistentPlaygroundOverlay({
 				const data = JSON.parse(response.text);
 				setActivePlugins(Object.keys(data.plugins));
 				setPluginNames(data.plugins);
-				setWpSiteName(data.siteName);
 			} catch (error) {
 				logger.error('Failed to fetch site data:', error);
 				setActivePlugins([]);
@@ -312,7 +310,7 @@ export function PersistentPlaygroundOverlay({
 				</OverlaySection>
 
 				<OverlaySection title="Backup">
-					<BackupReminder wpSiteName={wpSiteName} />
+					<BackupReminder />
 				</OverlaySection>
 
 				<div className={css.bottomRow}>

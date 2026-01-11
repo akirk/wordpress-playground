@@ -1,13 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef } from 'react';
 import css from './save-status-indicator.module.css';
 import classNames from 'classnames';
 import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
 import { Icon, Spinner } from '@wordpress/components';
 import { backup } from '@wordpress/icons';
-import { usePlaygroundClient } from '../../lib/use-playground-client';
-import { zipWpContent } from '@wp-playground/client';
-import saveAs from 'file-saver';
 import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
+import { useBackup } from '../../lib/hooks/use-backup';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -32,71 +30,68 @@ function getBackupUrgency(daysUsed: number): BackupUrgency {
 	return 'overdue';
 }
 
-function sanitizeForFilename(name: string): string {
-	return name
-		.trim()
-		.replace(/['']/g, '')
-		.replace(/[/\\:*?"<>|]/g, '')
-		.replace(/\s+/g, '-');
-}
-
-function formatBackupFilename(siteName: string): string {
-	const now = new Date();
-	const date = now.toISOString().slice(0, 10);
-	const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
-	const sanitized = sanitizeForFilename(siteName);
-	return `${sanitized}-backup-${date}-${time}.zip`;
-}
-
 export function BackupStatusIndicator() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
-	const playground = usePlaygroundClient();
-	const [isBackingUp, setIsBackingUp] = useState(false);
+	const { performBackup, isBackingUp } = useBackup();
+	const lastCheckedDateRef = useRef<string>(new Date().toDateString());
 
 	const {
 		lastAccessDate,
 		whenCreated,
 		daysUsedSinceLastBackup = 0,
-		backupHistory = [],
 	} = activeSite?.metadata || {};
+
+	// Check for day change when tab becomes visible or periodically
+	useEffect(() => {
+		if (!activeSite || activeSite.metadata.storage === 'none') {
+			return;
+		}
+
+		const checkForNewDay = () => {
+			const today = new Date().toDateString();
+			if (today !== lastCheckedDateRef.current) {
+				lastCheckedDateRef.current = today;
+				// It's a new day - increment the counter
+				dispatch(
+					updateSiteMetadata({
+						slug: activeSite.slug,
+						changes: {
+							lastAccessDate: Date.now(),
+							daysUsedSinceLastBackup:
+								(activeSite.metadata.daysUsedSinceLastBackup ||
+									0) + 1,
+						},
+					})
+				);
+			}
+		};
+
+		// Check when tab becomes visible
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === 'visible') {
+				checkForNewDay();
+			}
+		};
+
+		// Also check periodically (every minute) in case tab stays visible overnight
+		const interval = setInterval(checkForNewDay, 60000);
+
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		return () => {
+			document.removeEventListener(
+				'visibilitychange',
+				handleVisibilityChange
+			);
+			clearInterval(interval);
+		};
+	}, [activeSite, dispatch]);
 
 	// Only show backup indicator if user has returned after creation day
 	const hasReturnedAfterCreation =
 		whenCreated &&
 		lastAccessDate &&
 		!isSameDay(whenCreated, lastAccessDate);
-
-	const handleBackup = async () => {
-		if (!playground || !activeSite || isBackingUp) return;
-
-		setIsBackingUp(true);
-		try {
-			const siteName = activeSite.metadata.name;
-			const bytes = await zipWpContent(playground, {
-				selfContained: true,
-			});
-			const filename = formatBackupFilename(siteName);
-			const timestamp = Date.now();
-			saveAs(new File([bytes], filename));
-
-			const newHistory = [
-				{ filename, timestamp },
-				...backupHistory.slice(0, 9),
-			];
-			await dispatch(
-				updateSiteMetadata({
-					slug: activeSite.slug,
-					changes: {
-						backupHistory: newHistory,
-						daysUsedSinceLastBackup: 0,
-					},
-				})
-			);
-		} finally {
-			setIsBackingUp(false);
-		}
-	};
 
 	// Hide on first day - no need to prompt for backup yet
 	if (!hasReturnedAfterCreation) {
@@ -119,7 +114,7 @@ export function BackupStatusIndicator() {
 		<div className={classNames(css.indicator, css[urgency])}>
 			<button
 				className={classNames(css.saveButton, css[`${urgency}Button`])}
-				onClick={handleBackup}
+				onClick={performBackup}
 				disabled={isBackingUp}
 				type="button"
 				title={tooltipText}
