@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { external, trash } from '@wordpress/icons';
 import { Icon } from '@wordpress/icons';
 import { logger } from '@php-wasm/logger';
@@ -6,8 +6,6 @@ import { useActiveSite } from '../../lib/state/redux/store';
 import { opfsSiteStorage } from '../../lib/state/opfs/opfs-site-storage';
 import { WordPressIcon } from '@wp-playground/components';
 import { BackupReminder } from '../backup-reminder';
-import { PluginList } from '../plugin-list';
-import { usePlaygroundClient } from '../../lib/use-playground-client';
 import { TabInfoWindow } from '../tab-info-window';
 import {
 	Overlay,
@@ -115,7 +113,8 @@ const pluginBlueprints: PluginBlueprint[] = [
 	},
 	{
 		title: 'Chat to Blog',
-		description: 'Import media from Beeper chats and create blog posts',
+		description:
+			'Import media from Beeper chats and create blog posts. Requires Beeper Desktop running.',
 		blueprint: {
 			landingPage: '/wp-admin/admin.php?page=chat-to-blog',
 			steps: [
@@ -177,6 +176,82 @@ const pluginBlueprints: PluginBlueprint[] = [
 	},
 ];
 
+// Blueprint to install Health Check plugin and enable its troubleshooting mode.
+// IMPORTANT: The login step must be LAST because it loads WordPress.
+// The other steps run before WordPress boots, so the MU-plugin is in place
+// before WordPress loads any plugins (including the crashing one).
+//
+// The Health Check MU-plugin requires a database option 'health-check-disable-plugin-hash'
+// that matches: cookieValue + md5(REMOTE_ADDR). We add an earlier MU-plugin (alphabetically)
+// that uses pre_option filter to return the expected hash, bypassing the database check.
+const healthCheckRecoveryBlueprint = {
+	steps: [
+		{
+			step: 'installPlugin',
+			pluginData: {
+				resource: 'wordpress.org/plugins',
+				slug: 'health-check',
+			},
+			options: {
+				activate: false,
+			},
+		},
+		{
+			step: 'mkdir',
+			path: '/wordpress/wp-content/mu-plugins',
+		},
+		{
+			step: 'cp',
+			fromPath:
+				'/wordpress/wp-content/plugins/health-check/mu-plugin/health-check-troubleshooting-mode.php',
+			toPath: '/wordpress/wp-content/mu-plugins/health-check-troubleshooting-mode.php',
+		},
+		{
+			// Add an MU-plugin that loads before health-check (alphabetically: "0" < "h")
+			// to provide the expected hash via pre_option filter
+			step: 'writeFile',
+			path: '/wordpress/wp-content/mu-plugins/0-health-check-hash-bypass.php',
+			data: `<?php
+// Bypass Health Check hash verification by setting both the GET param and option.
+// Self-delete when user disables troubleshooting mode via Health Check UI.
+if (isset($_GET['health-check-disable-troubleshooting'])) {
+    @unlink(__FILE__);
+} else {
+    $_GET['health-check-disable-plugin-hash'] = 'playground-recovery';
+    add_filter('pre_option_health-check-disable-plugin-hash', function() {
+        return 'playground-recovery';
+    });
+    // Don't try to switch to a default theme
+    add_filter('pre_option_health-check-default-theme', function() {
+        return 'no';
+    });
+}
+`,
+		},
+		{
+			step: 'login',
+		},
+	],
+	landingPage:
+		'/wp-admin/site-health.php?tab=troubleshoot&health-check-disable-plugin-hash=playground-recovery',
+};
+
+function getBlueprintUrl(blueprint: object): string {
+	const url = new URL(window.location.href);
+	url.hash = '';
+	const jsonStr = JSON.stringify(blueprint);
+	const encoded = btoa(
+		encodeURIComponent(jsonStr).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+			String.fromCharCode(parseInt(p1, 16))
+		)
+	);
+	url.searchParams.set(
+		'blueprint-url',
+		`data:application/json;base64,${encoded}`
+	);
+	return url.toString();
+}
+
 interface PersistentPlaygroundOverlayProps {
 	onClose: () => void;
 }
@@ -185,60 +260,10 @@ export function PersistentPlaygroundOverlay({
 	onClose,
 }: PersistentPlaygroundOverlayProps) {
 	const activeSite = useActiveSite();
-	const playground = usePlaygroundClient();
 
 	const [showDeleteButton, setShowDeleteButton] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
-
-	const [activePlugins, setActivePlugins] = useState<string[]>([]);
-	const [isLoadingPlugins, setIsLoadingPlugins] = useState(true);
-	const [pluginNames, setPluginNames] = useState<Record<string, string>>({});
-
-	useEffect(() => {
-		if (!playground) {
-			return;
-		}
-		const client = playground;
-		async function fetchSiteData() {
-			try {
-				const response = await client.run({
-					code: `<?php
-						// Prevent plugins from loading
-						define('WP_INSTALLING', true);
-						require_once '/wordpress/wp-load.php';
-						require_once ABSPATH . 'wp-admin/includes/plugin.php';
-
-						$active = get_option('active_plugins', []);
-						$plugins = [];
-
-						foreach ($active as $plugin_file) {
-							$plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
-							if (file_exists($plugin_path)) {
-								$data = get_plugin_data($plugin_path, false, false);
-								$plugins[$plugin_file] = $data['Name'] ?: $plugin_file;
-							} else {
-								$plugins[$plugin_file] = $plugin_file;
-							}
-						}
-
-						echo json_encode([
-							'siteName' => html_entity_decode(get_option('blogname', 'WordPress')),
-							'plugins' => $plugins,
-						]);
-					`,
-				});
-				const data = JSON.parse(response.text);
-				setActivePlugins(Object.keys(data.plugins));
-				setPluginNames(data.plugins);
-			} catch (error) {
-				logger.error('Failed to fetch site data:', error);
-				setActivePlugins([]);
-			} finally {
-				setIsLoadingPlugins(false);
-			}
-		}
-		fetchSiteData();
-	}, [playground]);
+	const [showRecoveryButton, setShowRecoveryButton] = useState(false);
 
 	async function handleStartOver() {
 		if (!activeSite || activeSite.metadata.storage === 'none') {
@@ -271,43 +296,25 @@ export function PersistentPlaygroundOverlay({
 				<TabInfoWindow />
 				<OverlaySection title="Install Apps">
 					<div className={css.featuresList}>
-						{pluginBlueprints.map((plugin, index) => {
-							const url = new URL(window.location.href);
-							url.hash = '';
-							const jsonStr = JSON.stringify(plugin.blueprint);
-							const encoded = btoa(
-								encodeURIComponent(jsonStr).replace(
-									/%([0-9A-F]{2})/g,
-									(_, p1) =>
-										String.fromCharCode(parseInt(p1, 16))
-								)
-							);
-							url.searchParams.set(
-								'blueprint-url',
-								`data:application/json;base64,${encoded}`
-							);
-							return (
-								<a
-									key={index}
-									className={css.featureItem}
-									href={url.toString()}
-								>
-									<span className={css.featureIcon}>
-										<WordPressIcon />
+						{pluginBlueprints.map((plugin, index) => (
+							<a
+								key={index}
+								className={css.featureItem}
+								href={getBlueprintUrl(plugin.blueprint)}
+							>
+								<span className={css.featureIcon}>
+									<WordPressIcon />
+								</span>
+								<span className={css.featureContent}>
+									<span className={css.featureTitle}>
+										{plugin.title}
 									</span>
-									<span className={css.featureContent}>
-										<span className={css.featureTitle}>
-											{plugin.title}
-										</span>
-										<span
-											className={css.featureDescription}
-										>
-											{plugin.description}
-										</span>
+									<span className={css.featureDescription}>
+										{plugin.description}
 									</span>
-								</a>
-							);
-						})}
+								</span>
+							</a>
+						))}
 					</div>
 				</OverlaySection>
 
@@ -363,11 +370,26 @@ export function PersistentPlaygroundOverlay({
 				</div>
 
 				<OverlaySection title="Recovery">
-					<PluginList
-						activePlugins={activePlugins}
-						pluginNames={pluginNames}
-						isLoading={isLoadingPlugins}
-					/>
+					<p>
+						If WordPress crashed,{' '}
+						<button
+							className={css.textButton}
+							onClick={() =>
+								setShowRecoveryButton(!showRecoveryButton)
+							}
+						>
+							you can troubleshoot
+						</button>
+						.
+					</p>
+					{showRecoveryButton && (
+						<a
+							href={getBlueprintUrl(healthCheckRecoveryBlueprint)}
+							className={css.primaryButton}
+						>
+							Install Health Check &amp; Troubleshoot
+						</a>
+					)}
 				</OverlaySection>
 			</OverlayBody>
 		</Overlay>

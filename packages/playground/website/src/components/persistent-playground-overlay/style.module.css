@@ -153,3 +153,26 @@
 .dangerButton svg {
 	fill: currentColor;
 }
+
+.primaryButton {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 12px;
+	padding: 12px 20px;
+	background: #3858e9;
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	font-size: clamp(14px, 1.4vw, 15px);
+	font-weight: 500;
+	cursor: pointer;
+	text-decoration: none;
+	transition: all 0.15s ease;
+}
+
+.primaryButton:hover {
+	background: #2d4bd1;
+	color: #fff;
+	text-decoration: none;
+}

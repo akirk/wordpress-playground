@@ -60,10 +60,15 @@ export function bootSiteClient(
 		dispatch: PlaygroundDispatch,
 		getState: () => PlaygroundReduxState
 	) => {
+		console.log('[bootSiteClient] Starting boot for site:', siteSlug);
 		signal.onabort = () => {
 			dispatch(removeClientInfo(siteSlug));
 		};
 		const site = selectSiteBySlug(getState(), siteSlug);
+		console.log(
+			'[bootSiteClient] Site storage type:',
+			site.metadata.storage
+		);
 
 		let mountDescriptor = undefined;
 		if (site.metadata.storage === 'opfs') {
@@ -127,6 +132,10 @@ export function bootSiteClient(
 			}
 		}
 
+		console.log(
+			'[bootSiteClient] isWordPressInstalled:',
+			isWordPressInstalled
+		);
 		logTrackingEvent('load');
 
 		// Initialize tab coordinator for multi-tab detection
@@ -320,9 +329,19 @@ export function bootSiteClient(
 		let additionalSteps: StepDefinition[] = [];
 		let additionalLandingPage: string | undefined;
 
+		console.log(
+			'[bootSiteClient] blueprintUrl:',
+			blueprintUrl ? 'present' : 'none'
+		);
+		console.log(
+			'[bootSiteClient] Will process blueprint:',
+			blueprintUrl && isWordPressInstalled
+		);
+
 		if (blueprintUrl && isWordPressInstalled) {
 			try {
 				let blueprintDeclaration;
+				console.log('[bootSiteClient] Parsing blueprint URL...');
 
 				// Check if it's a base64 data URL
 				if (blueprintUrl.startsWith('data:application/json;base64,')) {
@@ -355,18 +374,37 @@ export function bootSiteClient(
 				additionalSteps = (blueprintDeclaration.steps ||
 					[]) as StepDefinition[];
 				additionalLandingPage = blueprintDeclaration.landingPage;
+				console.log(
+					'[bootSiteClient] Parsed blueprint steps:',
+					additionalSteps.map((s) => (s as any).step)
+				);
+				console.log(
+					'[bootSiteClient] Landing page:',
+					additionalLandingPage
+				);
 				// Clear the blueprint-url from the URL after reading it
 				urlParams.delete('blueprint-url');
 				const newUrl = new URL(window.location.href);
 				newUrl.search = urlParams.toString();
 				window.history.replaceState({}, '', newUrl.toString());
 			} catch (e) {
+				console.error(
+					'[bootSiteClient] Failed to process blueprint:',
+					e
+				);
 				logger.error('Failed to process blueprint:', e);
 			}
 		}
 
 		let blueprint: Blueprint;
 		if (isWordPressInstalled) {
+			// Check if additional steps already include a login step.
+			// If so, don't auto-prepend login (this allows recovery blueprints
+			// to run filesystem steps BEFORE WordPress boots).
+			const additionalStepsHaveLogin = additionalSteps.some(
+				(s) => (s as any).step === 'login'
+			);
+
 			// For persisted sites, use runtime config and restore the user's last position
 			blueprint = {
 				preferredVersions: {
@@ -380,8 +418,8 @@ export function bootSiteClient(
 				extraLibraries: site.metadata.runtimeConfiguration
 					.extraLibraries as any[],
 				constants: site.metadata.runtimeConfiguration.constants,
-				// Auto-login and restore the user's last position
-				login: true,
+				// Auto-login unless additional steps handle login themselves
+				...(!additionalStepsHaveLogin && { login: true }),
 				// Use URL param or blueprint landing page if present, otherwise restore last URL
 				landingPage:
 					urlParamLandingPage ||
@@ -415,6 +453,19 @@ export function bootSiteClient(
 		console.log(
 			'[boot-site-client] About to call startPlaygroundWeb (spawning worker)'
 		);
+		console.log(
+			'[bootSiteClient] Final blueprint steps:',
+			(blueprint as any).steps?.map((s: any) => s.step) || 'none'
+		);
+
+		// Check if we're in recovery mode (Health Check troubleshooting).
+		// If so, skip the isWordPressInstalled() check that loads WordPress
+		// to prevent crashes from broken plugins.
+		const isRecoveryMode = additionalLandingPage?.includes(
+			'health-check-disable-plugin-hash'
+		);
+		console.log('[bootSiteClient] Recovery mode:', isRecoveryMode);
+		console.log('[bootSiteClient] Calling startPlaygroundWeb...');
 		try {
 			await startPlaygroundWeb({
 				iframe: iframe!,
@@ -426,13 +477,24 @@ export function bootSiteClient(
 					new URLSearchParams(window.location.search).get(
 						'experimental-blueprints-v2-runner'
 					) === 'yes',
+				// Skip the WordPress install check in recovery mode to avoid
+				// loading WordPress before blueprint steps run.
+				skipWordPressInstallCheck: isRecoveryMode,
 				// Intercept the Playground client even if the
 				// Blueprint fails.
 				onClientConnected: (playgroundClient) => {
+					console.log('[bootSiteClient] Client connected!');
 					playground = (window as any)['playground'] =
 						playgroundClient;
 				},
 				// Log Blueprint events
+				onBlueprintStepCompleted: (result, step) => {
+					console.log(
+						'[bootSiteClient] Step completed:',
+						(step as any)?.step,
+						result
+					);
+				},
 				onBlueprintValidated: logBlueprintEvents,
 				mounts: mountDescriptor
 					? [
@@ -446,7 +508,14 @@ export function bootSiteClient(
 				corsProxy: corsProxyUrl,
 				gitAdditionalHeadersCallback: createGitAuthHeaders(),
 			});
+			console.log(
+				'[bootSiteClient] startPlaygroundWeb completed successfully'
+			);
 		} catch (e) {
+			console.error(
+				'[bootSiteClient] startPlaygroundWeb threw an error:',
+				e
+			);
 			logger.error(e);
 			logTrackingEvent('error', { source: 'bootSiteClient' });
 
