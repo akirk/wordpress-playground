@@ -7,6 +7,7 @@ import type { BlueprintStepError, PresentationHelpers } from './types';
 import { BlueprintStepErrorDetails } from './blueprint-step-error-details';
 // @ts-ignore
 import { corsProxyUrl } from 'virtual:cors-proxy-url';
+import { getHealthCheckRecoveryUrl } from '../../lib/health-check-recovery';
 
 export interface SiteErrorViewContext {
 	error: SiteError;
@@ -503,6 +504,7 @@ function networkFirewallInterferenceView({
 function genericSiteBootFailedView({
 	blueprintStepError,
 	helpers,
+	site,
 }: SiteErrorViewContext): SiteErrorViewConfig {
 	// If we have a Blueprint step error, the dedicated view will have been used.
 	if (blueprintStepError) {
@@ -512,6 +514,32 @@ function genericSiteBootFailedView({
 			blueprintStepError,
 			helpers,
 		});
+	}
+
+	const isPersistent = site?.metadata?.storage !== 'none';
+
+	if (isPersistent) {
+		return {
+			title: 'Playground crashed',
+			isDeveloperError: false,
+			detailSummaryOverride: undefined,
+			body: (
+				<p className={css.errorLead}>
+					WordPress crashed, likely due to a plugin error. Install the
+					Health Check plugin to troubleshoot and identify the
+					problematic plugin.
+				</p>
+			),
+			actions: [
+				<a
+					key="health-check"
+					href={getHealthCheckRecoveryUrl()}
+					className={css.primaryButtonLink}
+				>
+					Install Health Check &amp; Troubleshoot
+				</a>,
+			],
+		};
 	}
 
 	return {
@@ -536,6 +564,10 @@ function genericSiteBootFailedView({
 	};
 }
 
+// Blueprint to install Health Check plugin and enable its troubleshooting mode.
+// IMPORTANT: The login step must be LAST because it loads WordPress.
+// The other steps run before WordPress boots, so the MU-plugin is in place
+// before WordPress loads any plugins (including the crashing one).
 function blueprintStepExecutionView({
 	blueprintStepError,
 }: SiteErrorViewContext): SiteErrorViewConfig {

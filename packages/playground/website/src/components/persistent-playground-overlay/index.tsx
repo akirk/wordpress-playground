@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { external, trash } from '@wordpress/icons';
 import { Icon } from '@wordpress/icons';
 import { logger } from '@php-wasm/logger';
@@ -6,8 +6,6 @@ import { useActiveSite } from '../../lib/state/redux/store';
 import { opfsSiteStorage } from '../../lib/state/opfs/opfs-site-storage';
 import { WordPressIcon } from '@wp-playground/components';
 import { BackupReminder } from '../backup-reminder';
-import { PluginList } from '../plugin-list';
-import { usePlaygroundClient } from '../../lib/use-playground-client';
 import { TabInfoWindow } from '../tab-info-window';
 import {
 	Overlay,
@@ -16,6 +14,10 @@ import {
 	OverlaySection,
 } from '../overlay';
 import css from './style.module.css';
+import {
+	getBlueprintUrl,
+	healthCheckRecoveryBlueprint,
+} from '../../lib/health-check-recovery';
 
 type PluginBlueprint = {
 	title: string;
@@ -115,7 +117,8 @@ const pluginBlueprints: PluginBlueprint[] = [
 	},
 	{
 		title: 'Chat to Blog',
-		description: 'Import media from Beeper chats and create blog posts',
+		description:
+			'Import media from Beeper chats and create blog posts. Requires Beeper Desktop running.',
 		blueprint: {
 			landingPage: '/wp-admin/admin.php?page=chat-to-blog',
 			steps: [
@@ -185,60 +188,10 @@ export function PersistentPlaygroundOverlay({
 	onClose,
 }: PersistentPlaygroundOverlayProps) {
 	const activeSite = useActiveSite();
-	const playground = usePlaygroundClient();
 
 	const [showDeleteButton, setShowDeleteButton] = useState(false);
 	const [isDeleting, setIsDeleting] = useState(false);
-
-	const [activePlugins, setActivePlugins] = useState<string[]>([]);
-	const [isLoadingPlugins, setIsLoadingPlugins] = useState(true);
-	const [pluginNames, setPluginNames] = useState<Record<string, string>>({});
-
-	useEffect(() => {
-		if (!playground) {
-			return;
-		}
-		const client = playground;
-		async function fetchSiteData() {
-			try {
-				const response = await client.run({
-					code: `<?php
-						// Prevent plugins from loading
-						define('WP_INSTALLING', true);
-						require_once '/wordpress/wp-load.php';
-						require_once ABSPATH . 'wp-admin/includes/plugin.php';
-
-						$active = get_option('active_plugins', []);
-						$plugins = [];
-
-						foreach ($active as $plugin_file) {
-							$plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
-							if (file_exists($plugin_path)) {
-								$data = get_plugin_data($plugin_path, false, false);
-								$plugins[$plugin_file] = $data['Name'] ?: $plugin_file;
-							} else {
-								$plugins[$plugin_file] = $plugin_file;
-							}
-						}
-
-						echo json_encode([
-							'siteName' => html_entity_decode(get_option('blogname', 'WordPress')),
-							'plugins' => $plugins,
-						]);
-					`,
-				});
-				const data = JSON.parse(response.text);
-				setActivePlugins(Object.keys(data.plugins));
-				setPluginNames(data.plugins);
-			} catch (error) {
-				logger.error('Failed to fetch site data:', error);
-				setActivePlugins([]);
-			} finally {
-				setIsLoadingPlugins(false);
-			}
-		}
-		fetchSiteData();
-	}, [playground]);
+	const [showRecoveryButton, setShowRecoveryButton] = useState(false);
 
 	async function handleStartOver() {
 		if (!activeSite || activeSite.metadata.storage === 'none') {
@@ -271,43 +224,25 @@ export function PersistentPlaygroundOverlay({
 				<TabInfoWindow />
 				<OverlaySection title="Install Apps">
 					<div className={css.featuresList}>
-						{pluginBlueprints.map((plugin, index) => {
-							const url = new URL(window.location.href);
-							url.hash = '';
-							const jsonStr = JSON.stringify(plugin.blueprint);
-							const encoded = btoa(
-								encodeURIComponent(jsonStr).replace(
-									/%([0-9A-F]{2})/g,
-									(_, p1) =>
-										String.fromCharCode(parseInt(p1, 16))
-								)
-							);
-							url.searchParams.set(
-								'blueprint-url',
-								`data:application/json;base64,${encoded}`
-							);
-							return (
-								<a
-									key={index}
-									className={css.featureItem}
-									href={url.toString()}
-								>
-									<span className={css.featureIcon}>
-										<WordPressIcon />
+						{pluginBlueprints.map((plugin, index) => (
+							<a
+								key={index}
+								className={css.featureItem}
+								href={getBlueprintUrl(plugin.blueprint)}
+							>
+								<span className={css.featureIcon}>
+									<WordPressIcon />
+								</span>
+								<span className={css.featureContent}>
+									<span className={css.featureTitle}>
+										{plugin.title}
 									</span>
-									<span className={css.featureContent}>
-										<span className={css.featureTitle}>
-											{plugin.title}
-										</span>
-										<span
-											className={css.featureDescription}
-										>
-											{plugin.description}
-										</span>
+									<span className={css.featureDescription}>
+										{plugin.description}
 									</span>
-								</a>
-							);
-						})}
+								</span>
+							</a>
+						))}
 					</div>
 				</OverlaySection>
 
@@ -363,11 +298,26 @@ export function PersistentPlaygroundOverlay({
 				</div>
 
 				<OverlaySection title="Recovery">
-					<PluginList
-						activePlugins={activePlugins}
-						pluginNames={pluginNames}
-						isLoading={isLoadingPlugins}
-					/>
+					<p>
+						If WordPress crashed,{' '}
+						<button
+							className={css.textButton}
+							onClick={() =>
+								setShowRecoveryButton(!showRecoveryButton)
+							}
+						>
+							you can troubleshoot
+						</button>
+						.
+					</p>
+					{showRecoveryButton && (
+						<a
+							href={getBlueprintUrl(healthCheckRecoveryBlueprint)}
+							className={css.primaryButton}
+						>
+							Install Health Check &amp; Troubleshoot
+						</a>
+					)}
 				</OverlaySection>
 			</OverlayBody>
 		</Overlay>
