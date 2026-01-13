@@ -200,6 +200,7 @@ export const JustViewport = function JustViewport({
 	siteSlug: string;
 }) {
 	const iframeRef = useRef<HTMLIFrameElement>(null);
+	const bootingRef = useRef(false);
 	const site = useAppSelector((state) => selectSiteBySlug(state, siteSlug))!;
 
 	const dispatch = useAppDispatch();
@@ -209,27 +210,14 @@ export const JustViewport = function JustViewport({
 	useEffect(() => {
 		const iframe = iframeRef.current;
 		if (!iframe) {
-			console.log('[JustViewport] No iframe ref yet');
 			return;
 		}
 
-		console.log('[JustViewport] Setting up bootSiteClient for:', siteSlug);
-
-		// Debug: Log iframe navigation events
-		const handleIframeLoad = () => {
-			console.log('[JustViewport] Iframe loaded, src:', iframe.src);
-			try {
-				console.log(
-					'[JustViewport] Iframe contentWindow location:',
-					iframe.contentWindow?.location?.href
-				);
-			} catch {
-				console.log(
-					'[JustViewport] Cannot access iframe contentWindow location (cross-origin)'
-				);
-			}
-		};
-		iframe.addEventListener('load', handleIframeLoad);
+		// Prevent re-entry if already booting
+		if (bootingRef.current) {
+			return;
+		}
+		bootingRef.current = true;
 
 		const abortController = new AbortController();
 		dispatch(
@@ -239,11 +227,7 @@ export const JustViewport = function JustViewport({
 		);
 
 		return () => {
-			console.log(
-				'[JustViewport] Cleanup: aborting bootSiteClient for:',
-				siteSlug
-			);
-			iframe.removeEventListener('load', handleIframeLoad);
+			bootingRef.current = false;
 			abortController.abort();
 			dispatch(removeClientInfo(siteSlug));
 		};

@@ -8,6 +8,7 @@ import {
 	addClientInfo,
 	removeClientInfo,
 	updateClientInfo,
+	selectClientInfoBySiteSlug,
 } from './slice-clients';
 import { logBlueprintEvents, logTrackingEvent } from '../../tracking';
 import {
@@ -62,15 +63,10 @@ export function bootSiteClient(
 		dispatch: PlaygroundDispatch,
 		getState: () => PlaygroundReduxState
 	) => {
-		console.log('[bootSiteClient] Starting boot for site:', siteSlug);
 		signal.onabort = () => {
 			dispatch(removeClientInfo(siteSlug));
 		};
 		const site = selectSiteBySlug(getState(), siteSlug);
-		console.log(
-			'[bootSiteClient] Site storage type:',
-			site.metadata.storage
-		);
 
 		let mountDescriptor = undefined;
 		if (site.metadata.storage === 'opfs') {
@@ -134,27 +130,14 @@ export function bootSiteClient(
 			}
 		}
 
-		console.log(
-			'[bootSiteClient] isWordPressInstalled:',
-			isWordPressInstalled
-		);
 		logTrackingEvent('load');
 
 		// Initialize tab coordinator for multi-tab detection
 		// Only for persistent sites - temporary sites don't need coordination
 		if (site.metadata.storage !== 'none') {
-			console.log(
-				'[boot-site-client] Initializing tab coordinator for site:',
-				site.slug
-			);
 			initTabCoordinator(
 				site.slug,
 				(reason) => {
-					// This callback is called when another tab requests we shut down
-					console.log(
-						'[boot-site-client] Received shutdown request:',
-						reason
-					);
 					dispatch(
 						setActiveSiteError({
 							error: 'tab-superseded',
@@ -165,10 +148,6 @@ export function bootSiteClient(
 				() => {
 					// This callback is called when another tab requests to take over as main
 					// We switch to dependent mode without showing an error
-					console.log(
-						'[boot-site-client] Switching to dependent mode - another tab requested takeover'
-					);
-
 					const remoteUrl = getRemoteUrl();
 					const scopedSiteUrl = `/scope:${encodeURIComponent(site.slug)}/`;
 
@@ -219,20 +198,10 @@ export function bootSiteClient(
 				}
 			);
 
-			console.log('[boot-site-client] Checking for existing tabs...');
 			const { existingTabs, hasFreshTab, hasStaleTab } =
 				await checkForExistingTabs(site.slug);
-			console.log(
-				'[boot-site-client] Found existing tabs:',
-				existingTabs.length,
-				{ hasFreshTab, hasStaleTab, existingTabs }
-			);
 
 			if (hasStaleTab) {
-				// Request stale tabs (> 1 day old) to shut down
-				console.log(
-					'[boot-site-client] Requesting stale tabs to shut down'
-				);
 				requestStaleTabsShutdown(existingTabs);
 			}
 
@@ -249,29 +218,19 @@ export function bootSiteClient(
 
 				if (needsMainMode) {
 					// We need to run a blueprint - request takeover from main tab
-					console.log(
-						'[boot-site-client] Blueprint detected, requesting takeover from main tab'
-					);
-					const takeoverAcknowledged = await requestTakeover(
+					await requestTakeover(site.slug);
+					// Continue to main mode boot below (don't enter dependent mode)
+				} else {
+					// Check if we're already in dependent mode (prevent re-entry loop)
+					const existingClient = selectClientInfoBySiteSlug(
+						getState(),
 						site.slug
 					);
-					if (takeoverAcknowledged) {
-						console.log(
-							'[boot-site-client] Takeover acknowledged, proceeding as MAIN mode'
-						);
-						// Continue to main mode boot below (don't enter dependent mode)
-					} else {
-						// No acknowledgment - maybe main tab closed or timed out
-						// Proceed as main anyway since we need to run the blueprint
-						console.log(
-							'[boot-site-client] No takeover acknowledgment, proceeding as MAIN mode anyway'
-						);
+					if (existingClient?.isDependentMode) {
+						return;
 					}
-				} else {
+
 					// No blueprint - enter dependent mode
-					console.log(
-						'[boot-site-client] Entering DEPENDENT mode - fresh tab exists'
-					);
 					const remoteUrl = getRemoteUrl();
 					const scopedSiteUrl = `/scope:${encodeURIComponent(site.slug)}/`;
 					const scopedUrl = new URL(scopedSiteUrl, remoteUrl);
@@ -285,11 +244,6 @@ export function bootSiteClient(
 						site.metadata.lastUrl ||
 						'/wp-admin/';
 					scopedUrl.pathname += landingPage.replace(/^\//, '');
-
-					console.log(
-						'[boot-site-client] Setting iframe.src to:',
-						scopedUrl.toString()
-					);
 					iframe.src = scopedUrl.toString();
 
 					// Create a minimal "client" for dependent mode that can navigate
@@ -395,18 +349,12 @@ export function bootSiteClient(
 					// Note: In dependent mode, we don't have a PlaygroundClient.
 					// The UI should handle this gracefully (backup buttons etc. won't work).
 					// The user can close the other tab if they need full functionality.
-					console.log(
-						'[boot-site-client] DEPENDENT mode setup complete, returning early (no worker spawn)'
-					);
 					logger.info(
 						'Playground running in dependent mode - reusing existing service worker from another tab'
 					);
 					return;
 				}
 			}
-			console.log(
-				'[boot-site-client] No fresh tab found or blueprint needs main mode, will spawn own worker (MAIN mode)'
-			);
 		}
 
 		// Check for pending URL blueprint from redux (set by resolveSiteFromUrl)
@@ -422,19 +370,9 @@ export function bootSiteClient(
 		let additionalSteps: StepDefinition[] = [];
 		let additionalLandingPage: string | undefined;
 
-		console.log(
-			'[bootSiteClient] blueprintUrl:',
-			blueprintUrl ? 'present' : 'none'
-		);
-		console.log(
-			'[bootSiteClient] Will process blueprint:',
-			blueprintUrl && isWordPressInstalled
-		);
-
 		if (blueprintUrl && isWordPressInstalled) {
 			try {
 				let blueprintDeclaration;
-				console.log('[bootSiteClient] Parsing blueprint URL...');
 
 				// Check if it's a base64 data URL
 				if (blueprintUrl.startsWith('data:application/json;base64,')) {
@@ -467,24 +405,12 @@ export function bootSiteClient(
 				additionalSteps = (blueprintDeclaration.steps ||
 					[]) as StepDefinition[];
 				additionalLandingPage = blueprintDeclaration.landingPage;
-				console.log(
-					'[bootSiteClient] Parsed blueprint steps:',
-					additionalSteps.map((s) => (s as any).step)
-				);
-				console.log(
-					'[bootSiteClient] Landing page:',
-					additionalLandingPage
-				);
 				// Clear the blueprint-url from the URL after reading it
 				urlParams.delete('blueprint-url');
 				const newUrl = new URL(window.location.href);
 				newUrl.search = urlParams.toString();
 				window.history.replaceState({}, '', newUrl.toString());
 			} catch (e) {
-				console.error(
-					'[bootSiteClient] Failed to process blueprint:',
-					e
-				);
 				logger.error('Failed to process blueprint:', e);
 			}
 		}
@@ -543,13 +469,6 @@ export function bootSiteClient(
 		}
 
 		let playground: PlaygroundClient | undefined = undefined;
-		console.log(
-			'[boot-site-client] About to call startPlaygroundWeb (spawning worker)'
-		);
-		console.log(
-			'[bootSiteClient] Final blueprint steps:',
-			(blueprint as any).steps?.map((s: any) => s.step) || 'none'
-		);
 
 		// Check if we're in recovery mode (Health Check troubleshooting).
 		// If so, skip the isWordPressInstalled() check that loads WordPress
@@ -557,8 +476,6 @@ export function bootSiteClient(
 		const isRecoveryMode = additionalLandingPage?.includes(
 			'health-check-disable-plugin-hash'
 		);
-		console.log('[bootSiteClient] Recovery mode:', isRecoveryMode);
-		console.log('[bootSiteClient] Calling startPlaygroundWeb...');
 		try {
 			await startPlaygroundWeb({
 				iframe: iframe!,
@@ -576,17 +493,8 @@ export function bootSiteClient(
 				// Intercept the Playground client even if the
 				// Blueprint fails.
 				onClientConnected: (playgroundClient) => {
-					console.log('[bootSiteClient] Client connected!');
 					playground = (window as any)['playground'] =
 						playgroundClient;
-				},
-				// Log Blueprint events
-				onBlueprintStepCompleted: (result, step) => {
-					console.log(
-						'[bootSiteClient] Step completed:',
-						(step as any)?.step,
-						result
-					);
 				},
 				onBlueprintValidated: logBlueprintEvents,
 				mounts: mountDescriptor
@@ -601,14 +509,7 @@ export function bootSiteClient(
 				corsProxy: corsProxyUrl,
 				gitAdditionalHeadersCallback: createGitAuthHeaders(),
 			});
-			console.log(
-				'[bootSiteClient] startPlaygroundWeb completed successfully'
-			);
 		} catch (e) {
-			console.error(
-				'[bootSiteClient] startPlaygroundWeb threw an error:',
-				e
-			);
 			logger.error(e);
 			logTrackingEvent('error', { source: 'bootSiteClient' });
 
