@@ -49,6 +49,8 @@ import {
 	initTabCoordinator,
 	checkForExistingTabs,
 	requestStaleTabsShutdown,
+	setDependentMode,
+	requestTakeover,
 } from './tab-coordinator';
 
 export function bootSiteClient(
@@ -145,19 +147,77 @@ export function bootSiteClient(
 				'[boot-site-client] Initializing tab coordinator for site:',
 				site.slug
 			);
-			initTabCoordinator(site.slug, (reason) => {
-				// This callback is called when another tab requests we shut down
-				console.log(
-					'[boot-site-client] Received shutdown request:',
-					reason
-				);
-				dispatch(
-					setActiveSiteError({
-						error: 'tab-superseded',
-						details: new Error(reason),
-					})
-				);
-			});
+			initTabCoordinator(
+				site.slug,
+				(reason) => {
+					// This callback is called when another tab requests we shut down
+					console.log(
+						'[boot-site-client] Received shutdown request:',
+						reason
+					);
+					dispatch(
+						setActiveSiteError({
+							error: 'tab-superseded',
+							details: new Error(reason),
+						})
+					);
+				},
+				() => {
+					// This callback is called when another tab requests to take over as main
+					// We switch to dependent mode without showing an error
+					console.log(
+						'[boot-site-client] Switching to dependent mode - another tab requested takeover'
+					);
+
+					const remoteUrl = getRemoteUrl();
+					const scopedSiteUrl = `/scope:${encodeURIComponent(site.slug)}/`;
+
+					// Create a minimal "client" for dependent mode that can navigate
+					const dependentModeClient = {
+						goTo: async (path: string) => {
+							const newUrl = new URL(
+								scopedSiteUrl + path.replace(/^\//, ''),
+								remoteUrl
+							);
+							iframe.src = newUrl.toString();
+						},
+						getCurrentURL: async () => {
+							try {
+								const iframeUrl = new URL(
+									iframe.contentWindow?.location?.href || ''
+								);
+								return iframeUrl.pathname.replace(
+									new RegExp(
+										`^${scopedSiteUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+									),
+									'/'
+								);
+							} catch {
+								return '/';
+							}
+						},
+					} as PlaygroundClient;
+
+					// Update client info to switch to dependent mode
+					dispatch(
+						updateClientInfo({
+							siteSlug: site.slug,
+							changes: {
+								client: dependentModeClient,
+								isDependentMode: true,
+								opfsMountDescriptor: undefined,
+							},
+						})
+					);
+
+					// Update tab coordinator state
+					setDependentMode(true);
+
+					logger.info(
+						'Switched to dependent mode - another tab has taken over as main'
+					);
+				}
+			);
 
 			console.log('[boot-site-client] Checking for existing tabs...');
 			const { existingTabs, hasFreshTab, hasStaleTab } =
@@ -178,141 +238,174 @@ export function bootSiteClient(
 
 			if (hasFreshTab) {
 				// A fresh tab (< 1 day old) already has this site open.
-				// Instead of spawning a new PHP worker, just load the iframe
-				// directly - the existing service worker will serve the request.
-				console.log(
-					'[boot-site-client] Entering DEPENDENT mode - fresh tab exists'
-				);
-				const remoteUrl = getRemoteUrl();
-				const scopedSiteUrl = `/scope:${encodeURIComponent(site.slug)}/`;
-				const scopedUrl = new URL(scopedSiteUrl, remoteUrl);
-
-				// Add landing page from site metadata or URL parameter
+				// Check if we need main mode for blueprints/plugins before deciding.
 				const urlParams = new URLSearchParams(window.location.search);
-				const landingPage =
-					urlParams.get('url') ||
-					site.metadata.lastUrl ||
-					'/wp-admin/';
-				scopedUrl.pathname += landingPage.replace(/^\//, '');
+				const hasBlueprintUrl = !!urlParams.get('blueprint-url');
+				const pendingBlueprint = selectPendingUrlBlueprint(getState());
+				const hasPendingBlueprintForSite =
+					pendingBlueprint && pendingBlueprint.siteSlug === site.slug;
+				const needsMainMode =
+					hasBlueprintUrl || hasPendingBlueprintForSite;
 
-				console.log(
-					'[boot-site-client] Setting iframe.src to:',
-					scopedUrl.toString()
-				);
-				iframe.src = scopedUrl.toString();
-
-				// Create a minimal "client" for dependent mode that can navigate
-				const dependentModeClient = {
-					goTo: async (path: string) => {
-						const newUrl = new URL(
-							scopedSiteUrl + path.replace(/^\//, ''),
-							remoteUrl
+				if (needsMainMode) {
+					// We need to run a blueprint - request takeover from main tab
+					console.log(
+						'[boot-site-client] Blueprint detected, requesting takeover from main tab'
+					);
+					const takeoverAcknowledged = await requestTakeover(
+						site.slug
+					);
+					if (takeoverAcknowledged) {
+						console.log(
+							'[boot-site-client] Takeover acknowledged, proceeding as MAIN mode'
 						);
-						iframe.src = newUrl.toString();
-					},
-					// Stub out other methods that might be called
-					getCurrentURL: async () => {
-						try {
-							const iframeUrl = new URL(
-								iframe.contentWindow?.location?.href || ''
-							);
-							return iframeUrl.pathname.replace(
-								new RegExp(
-									`^${scopedSiteUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
-								),
-								'/'
-							);
-						} catch {
-							return '/';
-						}
-					},
-				} as any;
-
-				// Add client info for dependent mode so the address bar can show the URL
-				dispatch(
-					addClientInfo({
-						siteSlug: site.slug,
-						url: landingPage,
-						client: dependentModeClient,
-						opfsMountDescriptor: undefined,
-						isDependentMode: true,
-					})
-				);
-
-				// Track iframe navigation in dependent mode
-				const handleIframeNavigation = () => {
-					try {
-						const iframeHref = iframe.contentWindow?.location?.href;
-						if (iframeHref) {
-							// Extract the path from the scoped URL
-							const iframeUrl = new URL(iframeHref);
-							// Remove the /scope:slug/ prefix to get the WordPress path
-							const path = iframeUrl.pathname.replace(
-								new RegExp(
-									`^${scopedSiteUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
-								),
-								'/'
-							);
-							dispatch(
-								updateClientInfo({
-									siteSlug: site.slug,
-									changes: { url: path },
-								})
-							);
-						}
-					} catch {
-						// Cross-origin access denied - can't track navigation
+						// Continue to main mode boot below (don't enter dependent mode)
+					} else {
+						// No acknowledgment - maybe main tab closed or timed out
+						// Proceed as main anyway since we need to run the blueprint
+						console.log(
+							'[boot-site-client] No takeover acknowledgment, proceeding as MAIN mode anyway'
+						);
 					}
-				};
+				} else {
+					// No blueprint - enter dependent mode
+					console.log(
+						'[boot-site-client] Entering DEPENDENT mode - fresh tab exists'
+					);
+					const remoteUrl = getRemoteUrl();
+					const scopedSiteUrl = `/scope:${encodeURIComponent(site.slug)}/`;
+					const scopedUrl = new URL(scopedSiteUrl, remoteUrl);
 
-				iframe.addEventListener('load', handleIframeNavigation);
+					// Add landing page from site metadata or URL parameter
+					const dependentUrlParams = new URLSearchParams(
+						window.location.search
+					);
+					const landingPage =
+						dependentUrlParams.get('url') ||
+						site.metadata.lastUrl ||
+						'/wp-admin/';
+					scopedUrl.pathname += landingPage.replace(/^\//, '');
 
-				// Clean up on abort
-				signal.onabort = () => {
-					iframe.removeEventListener('load', handleIframeNavigation);
-					dispatch(removeClientInfo(site.slug));
-				};
+					console.log(
+						'[boot-site-client] Setting iframe.src to:',
+						scopedUrl.toString()
+					);
+					iframe.src = scopedUrl.toString();
 
-				// Track site access even in dependent mode
-				const now = Date.now();
-				const lastAccess = site.metadata.lastAccessDate;
-				const isNewDay =
-					!lastAccess ||
-					new Date(lastAccess).toDateString() !==
-						new Date(now).toDateString();
+					// Create a minimal "client" for dependent mode that can navigate
+					const dependentModeClient = {
+						goTo: async (path: string) => {
+							const newUrl = new URL(
+								scopedSiteUrl + path.replace(/^\//, ''),
+								remoteUrl
+							);
+							iframe.src = newUrl.toString();
+						},
+						getCurrentURL: async () => {
+							try {
+								const iframeUrl = new URL(
+									iframe.contentWindow?.location?.href || ''
+								);
+								return iframeUrl.pathname.replace(
+									new RegExp(
+										`^${scopedSiteUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+									),
+									'/'
+								);
+							} catch {
+								return '/';
+							}
+						},
+					} as any;
 
-				const changes: {
-					lastAccessDate: number;
-					daysUsedSinceLastBackup?: number;
-				} = {
-					lastAccessDate: now,
-				};
+					// Add client info for dependent mode so the address bar can show the URL
+					dispatch(
+						addClientInfo({
+							siteSlug: site.slug,
+							url: landingPage,
+							client: dependentModeClient,
+							opfsMountDescriptor: undefined,
+							isDependentMode: true,
+						})
+					);
 
-				if (isNewDay) {
-					changes.daysUsedSinceLastBackup =
-						(site.metadata.daysUsedSinceLastBackup || 0) + 1;
+					// Track iframe navigation in dependent mode
+					const handleIframeNavigation = () => {
+						try {
+							const iframeHref =
+								iframe.contentWindow?.location?.href;
+							if (iframeHref) {
+								const iframeUrl = new URL(iframeHref);
+								const path = iframeUrl.pathname.replace(
+									new RegExp(
+										`^${scopedSiteUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+									),
+									'/'
+								);
+								dispatch(
+									updateClientInfo({
+										siteSlug: site.slug,
+										changes: { url: path },
+									})
+								);
+							}
+						} catch {
+							// Cross-origin access denied - can't track navigation
+						}
+					};
+
+					iframe.addEventListener('load', handleIframeNavigation);
+
+					// Clean up on abort
+					signal.onabort = () => {
+						iframe.removeEventListener(
+							'load',
+							handleIframeNavigation
+						);
+						dispatch(removeClientInfo(site.slug));
+					};
+
+					// Track site access even in dependent mode
+					const now = Date.now();
+					const lastAccess = site.metadata.lastAccessDate;
+					const isNewDay =
+						!lastAccess ||
+						new Date(lastAccess).toDateString() !==
+							new Date(now).toDateString();
+
+					const changes: {
+						lastAccessDate: number;
+						daysUsedSinceLastBackup?: number;
+					} = {
+						lastAccessDate: now,
+					};
+
+					if (isNewDay) {
+						changes.daysUsedSinceLastBackup =
+							(site.metadata.daysUsedSinceLastBackup || 0) + 1;
+					}
+
+					dispatch(
+						updateSiteMetadata({
+							slug: site.slug,
+							changes,
+						})
+					);
+
+					// Note: In dependent mode, we don't have a PlaygroundClient.
+					// The UI should handle this gracefully (backup buttons etc. won't work).
+					// The user can close the other tab if they need full functionality.
+					console.log(
+						'[boot-site-client] DEPENDENT mode setup complete, returning early (no worker spawn)'
+					);
+					logger.info(
+						'Playground running in dependent mode - reusing existing service worker from another tab'
+					);
+					return;
 				}
-
-				dispatch(
-					updateSiteMetadata({
-						slug: site.slug,
-						changes,
-					})
-				);
-
-				// Note: In dependent mode, we don't have a PlaygroundClient.
-				// The UI should handle this gracefully (backup buttons etc. won't work).
-				// The user can close the other tab if they need full functionality.
-				console.log(
-					'[boot-site-client] DEPENDENT mode setup complete, returning early (no worker spawn)'
-				);
-				logger.info(
-					'Playground running in dependent mode - reusing existing service worker from another tab'
-				);
-				return;
 			}
 			console.log(
-				'[boot-site-client] No fresh tab found, will spawn own worker (MAIN mode)'
+				'[boot-site-client] No fresh tab found or blueprint needs main mode, will spawn own worker (MAIN mode)'
 			);
 		}
 

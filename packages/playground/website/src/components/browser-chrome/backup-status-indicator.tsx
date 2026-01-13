@@ -6,6 +6,10 @@ import { Icon, Spinner } from '@wordpress/components';
 import { backup } from '@wordpress/icons';
 import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
 import { useBackup } from '../../lib/hooks/use-backup';
+import {
+	useTakeover,
+	usePendingTakeoverAction,
+} from '../../lib/hooks/use-takeover';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -34,7 +38,11 @@ export function BackupStatusIndicator() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const { performBackup, isBackingUp } = useBackup();
+	const { performTakeover, isTakingOver, isDependentMode } = useTakeover();
 	const lastCheckedDateRef = useRef<string>(new Date().toDateString());
+
+	// Auto-trigger backup after takeover + reload
+	usePendingTakeoverAction(performBackup);
 
 	const {
 		lastAccessDate,
@@ -104,22 +112,30 @@ export function BackupStatusIndicator() {
 	}
 
 	const urgency = getBackupUrgency(daysUsedSinceLastBackup);
-	const buttonText = isBackingUp
-		? 'Backing up...'
-		: formatUsageDays(daysUsedSinceLastBackup);
-	const tooltipText =
-		'Your Playground is stored in this browser. Browser data can be cleared unexpectedly. Click to download a backup.';
+	const isWorking = isBackingUp || isTakingOver;
+	const buttonText = isTakingOver
+		? 'Reloading...'
+		: isBackingUp
+			? 'Backing up...'
+			: formatUsageDays(daysUsedSinceLastBackup);
+	const tooltipText = isDependentMode
+		? 'Click to reload and enable backup. Your Playground is stored in this browser and may be cleared unexpectedly.'
+		: 'Your Playground is stored in this browser. Browser data can be cleared unexpectedly. Click to download a backup.';
+
+	const handleClick = isDependentMode
+		? () => performTakeover('backup')
+		: performBackup;
 
 	return (
 		<div className={classNames(css.indicator, css[urgency])}>
 			<button
 				className={classNames(css.saveButton, css[`${urgency}Button`])}
-				onClick={performBackup}
-				disabled={isBackingUp}
+				onClick={handleClick}
+				disabled={isWorking}
 				type="button"
 				title={tooltipText}
 			>
-				{isBackingUp ? <Spinner /> : <Icon icon={backup} size={16} />}
+				{isWorking ? <Spinner /> : <Icon icon={backup} size={16} />}
 				{buttonText}
 			</button>
 		</div>

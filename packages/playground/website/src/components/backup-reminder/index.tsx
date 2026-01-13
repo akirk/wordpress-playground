@@ -7,6 +7,10 @@ import { check, backup, upload } from '@wordpress/icons';
 import { logger } from '@php-wasm/logger';
 import css from './style.module.css';
 import { useBackup } from '../../lib/hooks/use-backup';
+import {
+	useTakeover,
+	usePendingTakeoverAction,
+} from '../../lib/hooks/use-takeover';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -41,10 +45,14 @@ function formatRelativeDate(timestamp: number): string {
 export function BackupReminder() {
 	const playground = usePlaygroundClient();
 	const activeSite = useActiveSite();
-	const { performBackup, isBackingUp } = useBackup();
+	const { performBackup, isBackingUp, canBackup } = useBackup();
+	const { performTakeover, isTakingOver, isDependentMode } = useTakeover();
 	const [isImporting, setIsImporting] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
 	const importInputRef = useRef<HTMLInputElement>(null);
+
+	// Auto-trigger backup after takeover + reload
+	usePendingTakeoverAction(performBackup);
 
 	if (!activeSite || activeSite.metadata.storage === 'none') {
 		return null;
@@ -152,15 +160,38 @@ export function BackupReminder() {
 				<div className={css.backupActions}>
 					<button
 						className={css.backupButton}
-						onClick={performBackup}
-						disabled={!playground || isBackingUp || isImporting}
+						onClick={
+							isDependentMode
+								? () => performTakeover('backup')
+								: performBackup
+						}
+						disabled={
+							!playground ||
+							isBackingUp ||
+							isImporting ||
+							isTakingOver
+						}
+						title={
+							isDependentMode
+								? 'This will reload to enable backup'
+								: undefined
+						}
 					>
-						{isBackingUp ? 'Backing up...' : 'Download backup'}
+						{isTakingOver
+							? 'Reloading...'
+							: isBackingUp
+								? 'Backing up...'
+								: 'Download backup'}
 					</button>
 					<button
 						className={css.importButton}
 						onClick={() => importInputRef.current?.click()}
-						disabled={!playground || isBackingUp || isImporting}
+						disabled={
+							!canBackup ||
+							isBackingUp ||
+							isImporting ||
+							isTakingOver
+						}
 					>
 						<Icon icon={upload} size={16} />
 						{isImporting ? 'Importing...' : 'Import backup'}

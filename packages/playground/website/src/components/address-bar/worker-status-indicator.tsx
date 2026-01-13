@@ -23,9 +23,25 @@ export function WorkerStatusIndicator({
 	const [otherTabCount, setOtherTabCount] = useState(0);
 	const [workerLost, setWorkerLost] = useState(false);
 	const knownTabsRef = useRef<Map<string, TabInfo>>(new Map());
+	const recentlyBecameDependentRef = useRef(false);
 
 	// In dependent mode, we have a clientInfo but it's using another tab's worker
 	const hasOwnWorker = !!clientInfo && !clientInfo.isDependentMode;
+	const isDependentMode = !!clientInfo?.isDependentMode;
+
+	// Reset workerLost when switching to dependent mode
+	// (give the new main tab time to boot before checking)
+	useEffect(() => {
+		if (isDependentMode) {
+			recentlyBecameDependentRef.current = true;
+			setWorkerLost(false);
+			// Give the new main tab time to boot before we start checking
+			const timer = setTimeout(() => {
+				recentlyBecameDependentRef.current = false;
+			}, 5000);
+			return () => clearTimeout(timer);
+		}
+	}, [isDependentMode]);
 
 	useEffect(() => {
 		if (!activeSite) {
@@ -51,7 +67,11 @@ export function WorkerStatusIndicator({
 				existingTabs.forEach((tab) => knownTabs.set(tab.tabId, tab));
 				setOtherTabCount(knownTabs.size);
 
-				if (!hasOwnWorker && knownTabs.size === 0) {
+				if (
+					!hasOwnWorker &&
+					knownTabs.size === 0 &&
+					!recentlyBecameDependentRef.current
+				) {
 					setWorkerLost(true);
 				}
 			} catch (error) {
@@ -80,7 +100,11 @@ export function WorkerStatusIndicator({
 				) {
 					knownTabs.delete(message.tabId);
 					setOtherTabCount(knownTabs.size);
-					if (!hasOwnWorker && knownTabs.size === 0) {
+					if (
+						!hasOwnWorker &&
+						knownTabs.size === 0 &&
+						!recentlyBecameDependentRef.current
+					) {
 						setWorkerLost(true);
 					}
 				}
