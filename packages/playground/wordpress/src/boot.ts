@@ -535,7 +535,7 @@ async function installWordPress(php: PHP) {
 				body: {
 					language: 'en',
 					prefix: 'wp_',
-					weblog_title: 'My WordPress Website',
+					weblog_title: 'My WordPress',
 					user_name: 'admin',
 					admin_password: 'password',
 					// The installation wizard demands typing the same password twice

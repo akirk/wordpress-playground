@@ -28,7 +28,7 @@ export const runWpInstallationWizard: StepHandler<
 		body: {
 			language: 'en',
 			prefix: 'wp_',
-			weblog_title: 'My WordPress Website',
+			weblog_title: 'My WordPress',
 			user_name: options.adminPassword || 'admin',
 			admin_password: options.adminPassword || 'password',
 			// The installation wizard demands typing the same password twice
