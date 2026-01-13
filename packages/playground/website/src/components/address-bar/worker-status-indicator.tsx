@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
 	useActiveSite,
 	useAppSelector,
@@ -7,16 +7,25 @@ import {
 import {
 	getCurrentTabInfo,
 	checkForExistingTabs,
+	type TabInfo,
 } from '../../lib/state/redux/tab-coordinator';
 import css from './worker-status-indicator.module.css';
 
-export function WorkerStatusIndicator() {
+interface WorkerStatusIndicatorProps {
+	onOpenOverlay?: () => void;
+}
+
+export function WorkerStatusIndicator({
+	onOpenOverlay,
+}: WorkerStatusIndicatorProps) {
 	const activeSite = useActiveSite();
 	const clientInfo = useAppSelector(getActiveClientInfo);
 	const [otherTabCount, setOtherTabCount] = useState(0);
 	const [workerLost, setWorkerLost] = useState(false);
+	const knownTabsRef = useRef<Map<string, TabInfo>>(new Map());
 
-	const hasOwnWorker = !!clientInfo;
+	// In dependent mode, we have a clientInfo but it's using another tab's worker
+	const hasOwnWorker = !!clientInfo && !clientInfo.isDependentMode;
 
 	useEffect(() => {
 		if (!activeSite) {
@@ -29,6 +38,7 @@ export function WorkerStatusIndicator() {
 		}
 
 		let isActive = true;
+		const knownTabs = knownTabsRef.current;
 
 		async function checkTabs() {
 			try {
@@ -37,9 +47,11 @@ export function WorkerStatusIndicator() {
 				);
 				if (!isActive) return;
 
-				setOtherTabCount(existingTabs.length);
+				knownTabs.clear();
+				existingTabs.forEach((tab) => knownTabs.set(tab.tabId, tab));
+				setOtherTabCount(knownTabs.size);
 
-				if (!hasOwnWorker && existingTabs.length === 0) {
+				if (!hasOwnWorker && knownTabs.size === 0) {
 					setWorkerLost(true);
 				}
 			} catch (error) {
@@ -56,12 +68,21 @@ export function WorkerStatusIndicator() {
 			const handleMessage = (event: MessageEvent) => {
 				const message = event.data;
 
-				if (message.type === 'pong' || message.type === 'tab-closing') {
-					setTimeout(() => {
-						if (isActive) {
-							checkTabs();
-						}
-					}, 200);
+				if (message.type === 'pong' && message.tabInfo) {
+					const otherTabId = message.tabInfo.tabId;
+					if (otherTabId !== tabInfo.tabId) {
+						knownTabs.set(otherTabId, message.tabInfo);
+						setOtherTabCount(knownTabs.size);
+					}
+				} else if (
+					message.type === 'tab-closing' &&
+					message.tabId !== tabInfo.tabId
+				) {
+					knownTabs.delete(message.tabId);
+					setOtherTabCount(knownTabs.size);
+					if (!hasOwnWorker && knownTabs.size === 0) {
+						setWorkerLost(true);
+					}
 				}
 			};
 
@@ -96,7 +117,16 @@ export function WorkerStatusIndicator() {
 				title="Worker connection lost. Click to reload."
 				onClick={() => window.location.reload()}
 			>
-				Reload required
+				<span className={css.reloadText}>Reload required</span>
+				<svg
+					className={css.reloadIcon}
+					width="12"
+					height="12"
+					viewBox="0 0 16 16"
+					fill="currentColor"
+				>
+					<path d="M13.65 2.35C12.2 0.9 10.21 0 8 0 3.58 0 0.01 3.58 0.01 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L9 7h7V0l-2.35 2.35z" />
+				</svg>
 			</div>
 		);
 	}
@@ -109,6 +139,8 @@ export function WorkerStatusIndicator() {
 					? `This tab has its own worker (${otherTabCount} other tab${otherTabCount === 1 ? '' : 's'})`
 					: `This tab depends on another tab's worker (${otherTabCount} other tab${otherTabCount === 1 ? '' : 's'})`
 			}
+			onClick={onOpenOverlay}
+			style={{ cursor: onOpenOverlay ? 'pointer' : 'default' }}
 		>
 			{hasOwnWorker ? 'Main' : 'Dependent'}
 		</div>

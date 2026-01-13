@@ -14,20 +14,19 @@ import css from './style.module.css';
 function formatLoadTime(timestamp: number): string {
 	const now = Date.now();
 	const diffMs = now - timestamp;
-	const diffMinutes = Math.floor(diffMs / (1000 * 60));
+	const diffSeconds = Math.floor(diffMs / 1000);
 
-	if (diffMinutes < 1) {
-		return 'just now';
-	} else if (diffMinutes < 60) {
-		return `${diffMinutes} minute${diffMinutes === 1 ? '' : 's'} ago`;
+	if (diffSeconds < 60) {
+		return `${diffSeconds} secs ago`;
+	} else if (diffSeconds < 3600) {
+		const diffMinutes = Math.floor(diffSeconds / 60);
+		return `${diffMinutes} mins ago`;
+	} else if (diffSeconds < 86400) {
+		const diffHours = Math.floor(diffSeconds / 3600);
+		return `${diffHours} hrs ago`;
 	} else {
-		const diffHours = Math.floor(diffMinutes / 60);
-		if (diffHours < 24) {
-			return `${diffHours} hour${diffHours === 1 ? '' : 's'} ago`;
-		} else {
-			const diffDays = Math.floor(diffHours / 24);
-			return `${diffDays} day${diffDays === 1 ? '' : 's'} ago`;
-		}
+		const diffDays = Math.floor(diffSeconds / 86400);
+		return `${diffDays} days ago`;
 	}
 }
 
@@ -38,8 +37,10 @@ export function TabInfoWindow() {
 	const [otherTabs, setOtherTabs] = useState<TabInfo[]>([]);
 	const [loadTime, setLoadTime] = useState<Date | null>(null);
 	const [isExpanded, setIsExpanded] = useState(false);
+	const [, setTick] = useState(0);
 
-	const hasOwnWorker = !!clientInfo;
+	// In dependent mode, we have a clientInfo but it's using another tab's worker
+	const hasOwnWorker = !!clientInfo && !clientInfo.isDependentMode;
 
 	useEffect(() => {
 		const currentTab = getCurrentTabInfo();
@@ -47,6 +48,14 @@ export function TabInfoWindow() {
 			setTabInfo(currentTab);
 			setLoadTime(new Date(currentTab.createdAt));
 		}
+	}, []);
+
+	// Update the time display every second
+	useEffect(() => {
+		const interval = setInterval(() => {
+			setTick((t) => t + 1);
+		}, 1000);
+		return () => clearInterval(interval);
 	}, []);
 
 	useEffect(() => {
@@ -144,7 +153,10 @@ export function TabInfoWindow() {
 		<div className={css.tabInfoWindow}>
 			<div className={css.infoRow}>
 				<span className={css.label}>WordPress loaded:</span>
-				<span className={css.value} title={loadTime.toLocaleString()}>
+				<span
+					className={css.timeValue}
+					title={loadTime.toLocaleString()}
+				>
 					{formatLoadTime(tabInfo.createdAt)}
 				</span>
 			</div>

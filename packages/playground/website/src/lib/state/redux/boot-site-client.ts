@@ -132,8 +132,16 @@ export function bootSiteClient(
 		// Initialize tab coordinator for multi-tab detection
 		// Only for persistent sites - temporary sites don't need coordination
 		if (site.metadata.storage !== 'none') {
+			console.log(
+				'[boot-site-client] Initializing tab coordinator for site:',
+				site.slug
+			);
 			initTabCoordinator(site.slug, (reason) => {
 				// This callback is called when another tab requests we shut down
+				console.log(
+					'[boot-site-client] Received shutdown request:',
+					reason
+				);
 				dispatch(
 					setActiveSiteError({
 						error: 'tab-superseded',
@@ -142,11 +150,20 @@ export function bootSiteClient(
 				);
 			});
 
+			console.log('[boot-site-client] Checking for existing tabs...');
 			const { existingTabs, hasFreshTab, hasStaleTab } =
 				await checkForExistingTabs(site.slug);
+			console.log(
+				'[boot-site-client] Found existing tabs:',
+				existingTabs.length,
+				{ hasFreshTab, hasStaleTab, existingTabs }
+			);
 
 			if (hasStaleTab) {
 				// Request stale tabs (> 1 day old) to shut down
+				console.log(
+					'[boot-site-client] Requesting stale tabs to shut down'
+				);
 				requestStaleTabsShutdown(existingTabs);
 			}
 
@@ -154,11 +171,12 @@ export function bootSiteClient(
 				// A fresh tab (< 1 day old) already has this site open.
 				// Instead of spawning a new PHP worker, just load the iframe
 				// directly - the existing service worker will serve the request.
-				const remoteUrl = getRemoteUrl();
-				const scopedUrl = new URL(
-					`/scope:${encodeURIComponent(site.slug)}/`,
-					remoteUrl
+				console.log(
+					'[boot-site-client] Entering DEPENDENT mode - fresh tab exists'
 				);
+				const remoteUrl = getRemoteUrl();
+				const scopedSiteUrl = `/scope:${encodeURIComponent(site.slug)}/`;
+				const scopedUrl = new URL(scopedSiteUrl, remoteUrl);
 
 				// Add landing page from site metadata or URL parameter
 				const urlParams = new URLSearchParams(window.location.search);
@@ -168,7 +186,83 @@ export function bootSiteClient(
 					'/wp-admin/';
 				scopedUrl.pathname += landingPage.replace(/^\//, '');
 
+				console.log(
+					'[boot-site-client] Setting iframe.src to:',
+					scopedUrl.toString()
+				);
 				iframe.src = scopedUrl.toString();
+
+				// Create a minimal "client" for dependent mode that can navigate
+				const dependentModeClient = {
+					goTo: async (path: string) => {
+						const newUrl = new URL(
+							scopedSiteUrl + path.replace(/^\//, ''),
+							remoteUrl
+						);
+						iframe.src = newUrl.toString();
+					},
+					// Stub out other methods that might be called
+					getCurrentURL: async () => {
+						try {
+							const iframeUrl = new URL(
+								iframe.contentWindow?.location?.href || ''
+							);
+							return iframeUrl.pathname.replace(
+								new RegExp(
+									`^${scopedSiteUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+								),
+								'/'
+							);
+						} catch {
+							return '/';
+						}
+					},
+				} as any;
+
+				// Add client info for dependent mode so the address bar can show the URL
+				dispatch(
+					addClientInfo({
+						siteSlug: site.slug,
+						url: landingPage,
+						client: dependentModeClient,
+						opfsMountDescriptor: undefined,
+						isDependentMode: true,
+					})
+				);
+
+				// Track iframe navigation in dependent mode
+				const handleIframeNavigation = () => {
+					try {
+						const iframeHref = iframe.contentWindow?.location?.href;
+						if (iframeHref) {
+							// Extract the path from the scoped URL
+							const iframeUrl = new URL(iframeHref);
+							// Remove the /scope:slug/ prefix to get the WordPress path
+							const path = iframeUrl.pathname.replace(
+								new RegExp(
+									`^${scopedSiteUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+								),
+								'/'
+							);
+							dispatch(
+								updateClientInfo({
+									siteSlug: site.slug,
+									changes: { url: path },
+								})
+							);
+						}
+					} catch {
+						// Cross-origin access denied - can't track navigation
+					}
+				};
+
+				iframe.addEventListener('load', handleIframeNavigation);
+
+				// Clean up on abort
+				signal.onabort = () => {
+					iframe.removeEventListener('load', handleIframeNavigation);
+					dispatch(removeClientInfo(site.slug));
+				};
 
 				// Track site access even in dependent mode
 				const now = Date.now();
@@ -200,11 +294,17 @@ export function bootSiteClient(
 				// Note: In dependent mode, we don't have a PlaygroundClient.
 				// The UI should handle this gracefully (backup buttons etc. won't work).
 				// The user can close the other tab if they need full functionality.
+				console.log(
+					'[boot-site-client] DEPENDENT mode setup complete, returning early (no worker spawn)'
+				);
 				logger.info(
 					'Playground running in dependent mode - reusing existing service worker from another tab'
 				);
 				return;
 			}
+			console.log(
+				'[boot-site-client] No fresh tab found, will spawn own worker (MAIN mode)'
+			);
 		}
 
 		// Check for pending URL blueprint from redux (set by resolveSiteFromUrl)
@@ -312,6 +412,9 @@ export function bootSiteClient(
 		}
 
 		let playground: PlaygroundClient | undefined = undefined;
+		console.log(
+			'[boot-site-client] About to call startPlaygroundWeb (spawning worker)'
+		);
 		try {
 			await startPlaygroundWeb({
 				iframe: iframe!,

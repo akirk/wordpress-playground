@@ -21,6 +21,8 @@ export interface ClientInfo {
 		mountpoint: string;
 	};
 	opfsSync?: OpfsSync;
+	/** True if this tab is in dependent mode (using another tab's worker) */
+	isDependentMode?: boolean;
 }
 
 // Create an entity adapter for ClientInfo

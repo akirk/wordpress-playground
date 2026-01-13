@@ -33,3 +33,21 @@
 	color: #ef4444;
 	background: rgba(239, 68, 68, 0.2);
 }
+
+.reloadText {
+	transition: opacity 0.15s ease;
+}
+
+.reloadIcon {
+	position: absolute;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.workerLost:hover .reloadText {
+	opacity: 0;
+}
+
+.workerLost:hover .reloadIcon {
+	opacity: 1;
+}

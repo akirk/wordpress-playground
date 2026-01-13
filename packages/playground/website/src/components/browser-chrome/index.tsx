@@ -71,6 +71,9 @@ export default function BrowserChrome({
 							onUpdate={(newUrl) =>
 								clientInfo?.client.goTo(newUrl)
 							}
+							onOpenOverlay={() =>
+								setIsPlaygroundsOverlayOpen(true)
+							}
 						/>
 					</div>
 

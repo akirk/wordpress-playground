@@ -43,6 +43,15 @@
 .value {
 	color: #fff;
 	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+}
+
+.timeValue {
+	color: #fff;
+	font-weight: 500;
+	font-variant-numeric: tabular-nums;
+	min-width: 85px;
+	text-align: right;
 }
 
 .expandIcon {
@@ -73,6 +82,7 @@
 .tabTime {
 	color: #9ca3af;
 	font-size: 12px;
+	font-variant-numeric: tabular-nums;
 }
 
 .workerBadge {

@@ -14,6 +14,7 @@ type TabInfo = {
 	tabId: string;
 	createdAt: number;
 	siteSlug: string;
+	isReady?: boolean; // True when PHP worker is fully booted and can handle service worker requests
 };
 
 type PingMessage = {
@@ -43,6 +44,20 @@ let channel: BroadcastChannel | null = null;
 let currentTabInfo: TabInfo | null = null;
 let shutdownCallback: ((reason: string) => void) | null = null;
 
+// Clean up on Vite HMR to prevent duplicate listeners
+// @ts-ignore
+if (import.meta.hot) {
+	// @ts-ignore
+	import.meta.hot.dispose(() => {
+		console.log('[tab-coordinator] HMR dispose: closing channel');
+		if (channel) {
+			channel.close();
+			channel = null;
+		}
+		currentTabInfo = null;
+	});
+}
+
 /**
  * Initialize the tab coordinator for a specific site.
  *
@@ -55,11 +70,18 @@ export function initTabCoordinator(
 	onShutdownRequested?: (reason: string) => void
 ): TabInfo {
 	if (currentTabInfo && currentTabInfo.siteSlug === siteSlug) {
+		console.log(
+			'[tab-coordinator] Already initialized for site:',
+			siteSlug,
+			'tabId:',
+			currentTabInfo.tabId
+		);
 		return currentTabInfo;
 	}
 
 	// Clean up existing if switching sites
 	if (channel) {
+		console.log('[tab-coordinator] Closing existing channel');
 		channel.close();
 	}
 
@@ -69,11 +91,33 @@ export function initTabCoordinator(
 		siteSlug,
 	};
 
+	console.log(
+		'[tab-coordinator] Initialized new tab:',
+		currentTabInfo.tabId,
+		'for site:',
+		siteSlug
+	);
+
 	shutdownCallback = onShutdownRequested || null;
 
 	try {
 		channel = new BroadcastChannel(CHANNEL_NAME);
 		channel.onmessage = handleMessage;
+		console.log('[tab-coordinator] BroadcastChannel created');
+
+		// Clean up on page unload to prevent stale listeners
+		window.addEventListener('beforeunload', () => {
+			console.log('[tab-coordinator] Page unloading, closing channel');
+			if (channel) {
+				// Notify other tabs we're closing
+				channel.postMessage({
+					type: 'tab-closing',
+					tabId: currentTabInfo?.tabId,
+				});
+				channel.close();
+				channel = null;
+			}
+		});
 	} catch (e) {
 		console.warn(
 			'BroadcastChannel not supported, tab coordination disabled'
@@ -106,7 +150,12 @@ export async function checkForExistingTabs(siteSlug: string): Promise<{
 	hasFreshTab: boolean;
 	hasStaleTab: boolean;
 }> {
+	console.log(
+		'[tab-coordinator] checkForExistingTabs called for site:',
+		siteSlug
+	);
 	if (!channel || !currentTabInfo) {
+		console.log('[tab-coordinator] No channel or tabInfo, returning empty');
 		return { existingTabs: [], hasFreshTab: false, hasStaleTab: false };
 	}
 
@@ -120,6 +169,10 @@ export async function checkForExistingTabs(siteSlug: string): Promise<{
 			message.tabInfo.siteSlug === siteSlug &&
 			message.tabInfo.tabId !== currentTabInfo?.tabId
 		) {
+			console.log(
+				'[tab-coordinator] Received pong from tab:',
+				message.tabInfo.tabId
+			);
 			existingTabs.push(message.tabInfo);
 		}
 	};
@@ -132,12 +185,21 @@ export async function checkForExistingTabs(siteSlug: string): Promise<{
 		tabId: currentTabInfo.tabId,
 		siteSlug,
 	};
+	console.log(
+		'[tab-coordinator] Sending ping from tab:',
+		currentTabInfo.tabId
+	);
 	channel.postMessage(pingMessage);
 
 	// Wait for responses
 	await new Promise((resolve) => setTimeout(resolve, PING_TIMEOUT_MS));
 
 	channel.removeEventListener('message', pongHandler);
+	console.log(
+		'[tab-coordinator] Ping timeout reached, found',
+		existingTabs.length,
+		'other tabs'
+	);
 
 	const hasFreshTab = existingTabs.some(
 		(tab) => now - tab.createdAt < ONE_DAY_MS
@@ -212,22 +274,45 @@ function handleMessage(event: MessageEvent<TabCoordinatorMessage>): void {
 	switch (message.type) {
 		case 'ping':
 			// Respond to pings from other tabs looking for the same site
+			console.log(
+				'[tab-coordinator] Received ping from tab:',
+				message.tabId,
+				'for site:',
+				message.siteSlug
+			);
 			if (message.siteSlug === currentTabInfo.siteSlug) {
+				console.log(
+					'[tab-coordinator] Responding with pong, our tabId:',
+					currentTabInfo.tabId
+				);
 				const pongMessage: PongMessage = {
 					type: 'pong',
 					tabInfo: currentTabInfo,
 				};
 				channel.postMessage(pongMessage);
+			} else {
+				console.log(
+					'[tab-coordinator] Ignoring ping, different site (ours:',
+					currentTabInfo.siteSlug,
+					')'
+				);
 			}
 			break;
 
 		case 'shutdown-request':
 			// Another tab is requesting we shut down
+			console.log(
+				'[tab-coordinator] Received shutdown request for tab:',
+				message.targetTabId
+			);
 			if (message.targetTabId === currentTabInfo.tabId) {
 				const reason =
 					message.reason === 'stale'
 						? 'This tab has been open for over a day and a newer tab was opened.'
 						: 'A newer tab has taken over this session.';
+				console.log(
+					'[tab-coordinator] Shutdown request is for us, calling callback'
+				);
 				shutdownCallback?.(reason);
 			}
 			break;
