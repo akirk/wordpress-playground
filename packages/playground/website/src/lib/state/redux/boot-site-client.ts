@@ -322,8 +322,9 @@ export function bootSiteClient(
 					// Track site access even in dependent mode
 					const now = Date.now();
 					const lastAccess = site.metadata.lastAccessDate;
+					// Only count as a new day if there was a previous access on a different calendar day
 					const isNewDay =
-						!lastAccess ||
+						lastAccess &&
 						new Date(lastAccess).toDateString() !==
 							new Date(now).toDateString();
 
@@ -601,8 +602,9 @@ export function bootSiteClient(
 		if (site.metadata.storage !== 'none') {
 			const now = Date.now();
 			const lastAccess = site.metadata.lastAccessDate;
+			// Only count as a new day if there was a previous access on a different calendar day
 			const isNewDay =
-				!lastAccess ||
+				lastAccess &&
 				new Date(lastAccess).toDateString() !==
 					new Date(now).toDateString();
 

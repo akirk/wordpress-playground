@@ -132,6 +132,14 @@ export async function addBrowserLanguageSteps(
 					resource: 'url',
 					url: `${pluginsBaseUrl}${translation.contentDir}/welcome-post.html`,
 				},
+			},
+			{
+				step: 'writeFile',
+				path: `/wordpress/wp-content/plugins/playground-welcome/${translation.contentDir}/vision-page.html`,
+				data: {
+					resource: 'url',
+					url: `${pluginsBaseUrl}${translation.contentDir}/vision-page.html`,
+				},
 			}
 		);
 	}

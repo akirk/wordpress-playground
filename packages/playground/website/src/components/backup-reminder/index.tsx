@@ -23,9 +23,40 @@ function isSameDay(timestamp1: number, timestamp2: number): boolean {
 }
 
 function formatRelativeDate(timestamp: number): string {
-	const now = Date.now();
-	const diffMs = now - timestamp;
-	const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+	const now = new Date();
+	const date = new Date(timestamp);
+	const diffMs = now.getTime() - timestamp;
+	const diffHours = diffMs / (1000 * 60 * 60);
+
+	// For recent times (less than 6 hours), show precise duration
+	if (diffHours < 6) {
+		const diffMinutes = Math.floor(diffMs / (1000 * 60));
+		if (diffMinutes < 1) {
+			return 'just now';
+		} else if (diffMinutes < 60) {
+			return diffMinutes === 1
+				? '1 minute ago'
+				: `${diffMinutes} minutes ago`;
+		} else {
+			const hours = Math.floor(diffHours);
+			return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+		}
+	}
+
+	// For older times, use calendar days
+	const todayStart = new Date(
+		now.getFullYear(),
+		now.getMonth(),
+		now.getDate()
+	);
+	const dateStart = new Date(
+		date.getFullYear(),
+		date.getMonth(),
+		date.getDate()
+	);
+	const diffDays = Math.round(
+		(todayStart.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24)
+	);
 
 	if (diffDays === 0) {
 		return 'today';
@@ -34,7 +65,7 @@ function formatRelativeDate(timestamp: number): string {
 	} else if (diffDays < 7) {
 		return `${diffDays} days ago`;
 	} else {
-		return new Date(timestamp).toLocaleDateString(undefined, {
+		return date.toLocaleDateString(undefined, {
 			year: 'numeric',
 			month: 'short',
 			day: 'numeric',
@@ -103,9 +134,12 @@ export function BackupReminder() {
 	};
 
 	const hasHistory = backupHistory.length > 0;
+	const { whenCreated } = activeSite.metadata;
 	const lastBackupText = lastBackup
 		? `Downloaded ${formatRelativeDate(lastBackup.timestamp)}`
-		: 'Never backed up';
+		: whenCreated
+			? `Created ${formatRelativeDate(whenCreated)}`
+			: 'Never backed up';
 
 	const renderLastBackupDate = () => {
 		if (!hasHistory) {
