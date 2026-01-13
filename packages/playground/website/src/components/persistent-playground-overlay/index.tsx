@@ -8,6 +8,7 @@ import { WordPressIcon } from '@wp-playground/components';
 import { BackupReminder } from '../backup-reminder';
 import { PluginList } from '../plugin-list';
 import { usePlaygroundClient } from '../../lib/use-playground-client';
+import { TabInfoWindow } from '../tab-info-window';
 import {
 	Overlay,
 	OverlayHeader,
@@ -83,10 +84,6 @@ const pluginBlueprints: PluginBlueprint[] = [
 					pluginPath:
 						'contact-sync-personal-crm/contact-sync-personal-crm.php',
 				},
-				{
-					step: 'activatePlugin',
-					pluginPath: 'a8c-team/a8c-team.php',
-				},
 			],
 		},
 	},
@@ -140,9 +137,8 @@ const pluginBlueprints: PluginBlueprint[] = [
 	{
 		title: 'AI Assistant',
 		description:
-			'AI-powered chat interface to modify your WordPress to your liking',
+			'AI-powered chat interface to modify your WordPress to your liking. Bring your own key or use a local LLM',
 		blueprint: {
-			landingPage: '/wp-admin/admin.php?page=ai-assistant-settings',
 			steps: [
 				{
 					step: 'unzip',
@@ -156,6 +152,25 @@ const pluginBlueprints: PluginBlueprint[] = [
 					step: 'activatePlugin',
 					pluginPath:
 						'playground-ai-assistant/playground-ai-assistant.php',
+				},
+			],
+		},
+	},
+	{
+		title: 'App Launcher',
+		description: 'Adds an app launcher to your WordPress',
+		blueprint: {
+			landingPage: '/wp-admin/options-general.php?page=my-apps',
+			steps: [
+				{
+					step: 'installPlugin',
+					pluginData: {
+						resource: 'wordpress.org/plugins',
+						slug: 'my-apps',
+					},
+					options: {
+						activate: true,
+					},
 				},
 			],
 		},
@@ -178,7 +193,6 @@ export function PersistentPlaygroundOverlay({
 	const [activePlugins, setActivePlugins] = useState<string[]>([]);
 	const [isLoadingPlugins, setIsLoadingPlugins] = useState(true);
 	const [pluginNames, setPluginNames] = useState<Record<string, string>>({});
-	const [wpSiteName, setWpSiteName] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!playground) {
@@ -216,7 +230,6 @@ export function PersistentPlaygroundOverlay({
 				const data = JSON.parse(response.text);
 				setActivePlugins(Object.keys(data.plugins));
 				setPluginNames(data.plugins);
-				setWpSiteName(data.siteName);
 			} catch (error) {
 				logger.error('Failed to fetch site data:', error);
 				setActivePlugins([]);
@@ -255,6 +268,7 @@ export function PersistentPlaygroundOverlay({
 		<Overlay onClose={onClose}>
 			<OverlayHeader onClose={onClose} />
 			<OverlayBody>
+				<TabInfoWindow />
 				<OverlaySection title="Install Apps">
 					<div className={css.featuresList}>
 						{pluginBlueprints.map((plugin, index) => {
@@ -298,7 +312,7 @@ export function PersistentPlaygroundOverlay({
 				</OverlaySection>
 
 				<OverlaySection title="Backup">
-					<BackupReminder wpSiteName={wpSiteName} />
+					<BackupReminder />
 				</OverlaySection>
 
 				<div className={css.bottomRow}>

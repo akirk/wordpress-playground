@@ -55,6 +55,8 @@ export function getSiteErrorView(
 			return directoryHandleUnknownErrorView();
 		case 'network-firewall-interference':
 			return networkFirewallInterferenceView(context);
+		case 'tab-superseded':
+			return tabSupersededView();
 		case 'site-boot-failed':
 		default:
 			return genericSiteBootFailedView(context);
@@ -280,6 +282,43 @@ function directoryHandleUnknownErrorView(): SiteErrorViewConfig {
 			</p>
 		),
 		actions: [],
+	};
+}
+
+function tabSupersededView(): SiteErrorViewConfig {
+	return {
+		title: 'Session moved to another tab',
+		isDeveloperError: false,
+		hideReportButton: true,
+		detailSummaryOverride: undefined,
+		body: (
+			<>
+				<p className={css.errorLead}>
+					This tab was open for a while, and a newer tab has taken
+					over the Playground session.
+				</p>
+				<p>
+					To avoid conflicts, this tab has been deactivated. You can
+					close it and continue working in the newer tab.
+				</p>
+			</>
+		),
+		actions: [
+			<Button
+				variant="primary"
+				key="close-tab"
+				onClick={() => window.close()}
+			>
+				Close this tab
+			</Button>,
+			<Button
+				variant="secondary"
+				key="reload"
+				onClick={() => window.location.reload()}
+			>
+				Reload and take over
+			</Button>,
+		],
 	};
 }
 

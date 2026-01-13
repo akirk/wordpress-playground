@@ -34,7 +34,7 @@ export default function BrowserChrome({
 }: BrowserChromeProps) {
 	const clientInfo = useAppSelector(getActiveClientInfo);
 	const activeSite = useActiveSite();
-	const showAddressBar = !!clientInfo;
+	const showAddressBar = !!clientInfo || !!activeSite;
 	const url = clientInfo?.url;
 	const dispatch = useAppDispatch();
 	const siteManagerIsOpen = useAppSelector(
@@ -70,6 +70,9 @@ export default function BrowserChrome({
 							url={url}
 							onUpdate={(newUrl) =>
 								clientInfo?.client.goTo(newUrl)
+							}
+							onOpenOverlay={() =>
+								setIsPlaygroundsOverlayOpen(true)
 							}
 						/>
 					</div>

@@ -160,13 +160,28 @@ export async function convertFetchEventToPHPRequest(event: FetchEvent) {
  */
 export async function broadcastMessageExpectReply(message: any, scope: string) {
 	const requestId = getNextRequestId();
-	for (const client of await self.clients.matchAll({
+	const clients = await self.clients.matchAll({
 		// Sometimes the client that triggered the current fetch()
 		// event is considered uncontrolled in Google Chrome. This
 		// only happens on the first few fetches() after the initial
 		// registration of the service worker.
 		includeUncontrolled: true,
-	})) {
+	});
+	console.log(
+		'[service-worker] Broadcasting to',
+		clients.length,
+		'clients, scope:',
+		scope,
+		'requestId:',
+		requestId
+	);
+	for (const client of clients) {
+		console.log(
+			'[service-worker] Posting to client:',
+			client.id,
+			'url:',
+			client.url
+		);
 		client.postMessage({
 			...message,
 			/**
@@ -286,27 +301,32 @@ export function removeContentSecurityPolicyDirective(
 
 	// Parse based on the CSP spec:
 	// https://w3c.github.io/webappsec-csp/#parse-serialized-policy
-	return cspHeader
-		// "For each token returned by strictly splitting serialized
-		// on the U+003B SEMICOLON character (;):"
-		.split(';')
-		.filter((rawDirective: string) => {
-			// "Strip leading and trailing ASCII whitespace from token."
-			const trimmedDirective = rawDirective
-				.replace(leadingAsciiWhitespace, '')
-				.replace(trailingAsciiWhitespace, '');
+	return (
+		cspHeader
+			// "For each token returned by strictly splitting serialized
+			// on the U+003B SEMICOLON character (;):"
+			.split(';')
+			.filter((rawDirective: string) => {
+				// "Strip leading and trailing ASCII whitespace from token."
+				const trimmedDirective = rawDirective
+					.replace(leadingAsciiWhitespace, '')
+					.replace(trailingAsciiWhitespace, '');
 
-			// "Let directive name be the result of collecting a sequence
-			// of code points from token which are not ASCII whitespace."
-			const [directiveName] = trimmedDirective.split(
-				asciiWhitespace,
-				// The directive name is the first token.
-				1
-			);
+				// "Let directive name be the result of collecting a sequence
+				// of code points from token which are not ASCII whitespace."
+				const [directiveName] = trimmedDirective.split(
+					asciiWhitespace,
+					// The directive name is the first token.
+					1
+				);
 
-			// "Directive names are case-insensitive, that is:
-			// script-SRC 'none' and ScRiPt-sRc 'none' are equivalent."
-			return directiveName.toLowerCase() !== directiveToRemove.toLowerCase();
-		})
-		.join(';');
+				// "Directive names are case-insensitive, that is:
+				// script-SRC 'none' and ScRiPt-sRc 'none' are equivalent."
+				return (
+					directiveName.toLowerCase() !==
+					directiveToRemove.toLowerCase()
+				);
+			})
+			.join(';')
+	);
 }

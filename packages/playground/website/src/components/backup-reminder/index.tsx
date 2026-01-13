@@ -1,29 +1,12 @@
 import { useState, useRef } from 'react';
 import { usePlaygroundClient } from '../../lib/use-playground-client';
-import { zipWpContent, importWordPressFiles } from '@wp-playground/client';
-import saveAs from 'file-saver';
-import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
-import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
+import { importWordPressFiles } from '@wp-playground/client';
+import { useActiveSite } from '../../lib/state/redux/store';
 import { Icon } from '@wordpress/icons';
 import { check, backup, upload } from '@wordpress/icons';
 import { logger } from '@php-wasm/logger';
 import css from './style.module.css';
-
-function sanitizeForFilename(name: string): string {
-	return name
-		.trim()
-		.replace(/['']/g, '') // Remove apostrophes
-		.replace(/[/\\:*?"<>|]/g, '') // Remove filesystem-unsafe characters
-		.replace(/\s+/g, '-'); // Replace whitespace with dashes
-}
-
-function formatBackupFilename(siteName: string): string {
-	const now = new Date();
-	const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
-	const time = now.toTimeString().slice(0, 8).replace(/:/g, ''); // HHMMSS
-	const sanitized = sanitizeForFilename(siteName);
-	return `${sanitized}-backup-${date}-${time}.zip`;
-}
+import { useBackup } from '../../lib/hooks/use-backup';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -55,15 +38,10 @@ function formatRelativeDate(timestamp: number): string {
 	}
 }
 
-interface BackupReminderProps {
-	wpSiteName?: string | null;
-}
-
-export function BackupReminder({ wpSiteName }: BackupReminderProps = {}) {
+export function BackupReminder() {
 	const playground = usePlaygroundClient();
 	const activeSite = useActiveSite();
-	const dispatch = useAppDispatch();
-	const [isBackingUp, setIsBackingUp] = useState(false);
+	const { performBackup, isBackingUp } = useBackup();
 	const [isImporting, setIsImporting] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
 	const importInputRef = useRef<HTMLInputElement>(null);
@@ -82,37 +60,6 @@ export function BackupReminder({ wpSiteName }: BackupReminderProps = {}) {
 	const needsBackup =
 		!lastBackupDate ||
 		(lastAccessDate && !isSameDay(lastBackupDate, lastAccessDate));
-
-	const handleBackup = async () => {
-		if (!playground || isBackingUp) return;
-
-		setIsBackingUp(true);
-		try {
-			const siteName = wpSiteName || activeSite.metadata.name;
-			const bytes = await zipWpContent(playground, {
-				selfContained: true,
-			});
-			const filename = formatBackupFilename(siteName);
-			const timestamp = Date.now();
-			saveAs(new File([bytes], filename));
-
-			const newHistory = [
-				{ filename, timestamp },
-				...backupHistory.slice(0, 9), // Keep max 10 entries
-			];
-			await dispatch(
-				updateSiteMetadata({
-					slug: activeSite.slug,
-					changes: {
-						backupHistory: newHistory,
-						daysUsedSinceLastBackup: 0,
-					},
-				})
-			);
-		} finally {
-			setIsBackingUp(false);
-		}
-	};
 
 	const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
@@ -205,7 +152,7 @@ export function BackupReminder({ wpSiteName }: BackupReminderProps = {}) {
 				<div className={css.backupActions}>
 					<button
 						className={css.backupButton}
-						onClick={handleBackup}
+						onClick={performBackup}
 						disabled={!playground || isBackingUp || isImporting}
 					>
 						{isBackingUp ? 'Backing up...' : 'Download backup'}

@@ -35,6 +35,7 @@ import {
 	defaultStorageType,
 	defaultSiteSlug,
 } from 'virtual:website-defaults';
+import { broadcastMetadataUpdate } from './cross-tab-sync';
 
 /**
  * The Site model used to represent a site within Playground.
@@ -171,6 +172,9 @@ export function updateSiteMetadata({
 				},
 			})
 		);
+
+		// Broadcast the changes to other tabs
+		broadcastMetadataUpdate(slug, changes);
 	};
 }
 

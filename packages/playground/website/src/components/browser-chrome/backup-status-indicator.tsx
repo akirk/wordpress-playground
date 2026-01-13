@@ -1,9 +1,11 @@
+import { useEffect, useRef } from 'react';
 import css from './save-status-indicator.module.css';
 import classNames from 'classnames';
 import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
-import { Icon } from '@wordpress/components';
+import { Icon, Spinner } from '@wordpress/components';
 import { backup } from '@wordpress/icons';
-import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
+import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
+import { useBackup } from '../../lib/hooks/use-backup';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -31,6 +33,8 @@ function getBackupUrgency(daysUsed: number): BackupUrgency {
 export function BackupStatusIndicator() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
+	const { performBackup, isBackingUp } = useBackup();
+	const lastCheckedDateRef = useRef<string>(new Date().toDateString());
 
 	const {
 		lastAccessDate,
@@ -38,15 +42,56 @@ export function BackupStatusIndicator() {
 		daysUsedSinceLastBackup = 0,
 	} = activeSite?.metadata || {};
 
+	// Check for day change when tab becomes visible or periodically
+	useEffect(() => {
+		if (!activeSite || activeSite.metadata.storage === 'none') {
+			return;
+		}
+
+		const checkForNewDay = () => {
+			const today = new Date().toDateString();
+			if (today !== lastCheckedDateRef.current) {
+				lastCheckedDateRef.current = today;
+				// It's a new day - increment the counter
+				dispatch(
+					updateSiteMetadata({
+						slug: activeSite.slug,
+						changes: {
+							lastAccessDate: Date.now(),
+							daysUsedSinceLastBackup:
+								(activeSite.metadata.daysUsedSinceLastBackup ||
+									0) + 1,
+						},
+					})
+				);
+			}
+		};
+
+		// Check when tab becomes visible
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === 'visible') {
+				checkForNewDay();
+			}
+		};
+
+		// Also check periodically (every minute) in case tab stays visible overnight
+		const interval = setInterval(checkForNewDay, 60000);
+
+		document.addEventListener('visibilitychange', handleVisibilityChange);
+		return () => {
+			document.removeEventListener(
+				'visibilitychange',
+				handleVisibilityChange
+			);
+			clearInterval(interval);
+		};
+	}, [activeSite, dispatch]);
+
 	// Only show backup indicator if user has returned after creation day
 	const hasReturnedAfterCreation =
 		whenCreated &&
 		lastAccessDate &&
 		!isSameDay(whenCreated, lastAccessDate);
-
-	const handleOpenSettings = () => {
-		dispatch(setSiteManagerOpen(true));
-	};
 
 	// Hide on first day - no need to prompt for backup yet
 	if (!hasReturnedAfterCreation) {
@@ -59,19 +104,22 @@ export function BackupStatusIndicator() {
 	}
 
 	const urgency = getBackupUrgency(daysUsedSinceLastBackup);
-	const buttonText = formatUsageDays(daysUsedSinceLastBackup);
+	const buttonText = isBackingUp
+		? 'Backing up...'
+		: formatUsageDays(daysUsedSinceLastBackup);
 	const tooltipText =
-		'Your Playground is stored in this browser. Browser data can be cleared unexpectedly, so regular backups keep your work safe.';
+		'Your Playground is stored in this browser. Browser data can be cleared unexpectedly. Click to download a backup.';
 
 	return (
 		<div className={classNames(css.indicator, css[urgency])}>
 			<button
 				className={classNames(css.saveButton, css[`${urgency}Button`])}
-				onClick={handleOpenSettings}
+				onClick={performBackup}
+				disabled={isBackingUp}
 				type="button"
 				title={tooltipText}
 			>
-				<Icon icon={backup} size={16} />
+				{isBackingUp ? <Spinner /> : <Icon icon={backup} size={16} />}
 				{buttonText}
 			</button>
 		</div>

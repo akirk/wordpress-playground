@@ -218,10 +218,34 @@ self.addEventListener('fetch', (event) => {
 
 	if (isURLScoped(url)) {
 		const scope = getURLScope(url)!;
+		console.log(
+			'[service-worker] Handling scoped request:',
+			url.pathname,
+			'scope:',
+			scope
+		);
 		return event.respondWith(
-			handleScopedRequest(event, scope).then((response) =>
-				rewriteCoopHeadersToDocumentIsolationPolicy(response, scope)
-			)
+			handleScopedRequest(event, scope)
+				.then((response) => {
+					console.log(
+						'[service-worker] Scoped request completed:',
+						url.pathname,
+						'status:',
+						response.status
+					);
+					return rewriteCoopHeadersToDocumentIsolationPolicy(
+						response,
+						scope
+					);
+				})
+				.catch((error) => {
+					console.error(
+						'[service-worker] Scoped request failed:',
+						url.pathname,
+						error
+					);
+					throw error;
+				})
 		);
 	}
 
