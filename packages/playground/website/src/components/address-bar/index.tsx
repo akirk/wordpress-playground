@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon, MenuItem, NavigableMenu, Popover } from '@wordpress/components';
 import { home, wordpress, layout, pin } from '@wordpress/icons';
+import { WorkerStatusIndicator } from './worker-status-indicator';
 import css from './style.module.css';
 
 /**
@@ -226,6 +227,7 @@ export default function AddressBar({ url, onUpdate }: AddressBarProps) {
 					aria-label='URL to visit in the WordPress site, like "/wp-admin"'
 					autoComplete="off"
 				/>
+				<WorkerStatusIndicator />
 				{isOpen && (
 					<Popover
 						placement="bottom-start"

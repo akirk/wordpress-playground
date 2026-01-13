@@ -170,7 +170,7 @@ export function bootSiteClient(
 
 				iframe.src = scopedUrl.toString();
 
-				// Track site access even in passive mode
+				// Track site access even in dependent mode
 				const now = Date.now();
 				const lastAccess = site.metadata.lastAccessDate;
 				const isNewDay =
@@ -197,11 +197,11 @@ export function bootSiteClient(
 					})
 				);
 
-				// Note: In passive mode, we don't have a PlaygroundClient.
+				// Note: In dependent mode, we don't have a PlaygroundClient.
 				// The UI should handle this gracefully (backup buttons etc. won't work).
 				// The user can close the other tab if they need full functionality.
 				logger.info(
-					'Playground running in passive mode - reusing existing service worker from another tab'
+					'Playground running in dependent mode - reusing existing service worker from another tab'
 				);
 				return;
 			}

@@ -8,6 +8,7 @@ import { WordPressIcon } from '@wp-playground/components';
 import { BackupReminder } from '../backup-reminder';
 import { PluginList } from '../plugin-list';
 import { usePlaygroundClient } from '../../lib/use-playground-client';
+import { TabInfoWindow } from '../tab-info-window';
 import {
 	Overlay,
 	OverlayHeader,
@@ -267,6 +268,7 @@ export function PersistentPlaygroundOverlay({
 		<Overlay onClose={onClose}>
 			<OverlayHeader onClose={onClose} />
 			<OverlayBody>
+				<TabInfoWindow />
 				<OverlaySection title="Install Apps">
 					<div className={css.featuresList}>
 						{pluginBlueprints.map((plugin, index) => {
