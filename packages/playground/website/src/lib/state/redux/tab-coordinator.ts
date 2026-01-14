@@ -61,6 +61,11 @@ type BackupCompletedMessage = {
 	success: boolean;
 };
 
+type SiteResetMessage = {
+	type: 'site-reset';
+	siteSlug: string;
+};
+
 type TabCoordinatorMessage =
 	| PingMessage
 	| PongMessage
@@ -68,7 +73,8 @@ type TabCoordinatorMessage =
 	| TakeoverRequestMessage
 	| TakeoverAcknowledgedMessage
 	| BackupRequestMessage
-	| BackupCompletedMessage;
+	| BackupCompletedMessage
+	| SiteResetMessage;
 
 const CHANNEL_NAME = 'playground-tab-coordinator';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -79,6 +85,7 @@ let currentTabInfo: TabInfo | null = null;
 let shutdownCallback: ((reason: string) => void) | null = null;
 let takeoverCallback: (() => void) | null = null;
 let backupRequestCallback: (() => Promise<boolean>) | null = null;
+let siteResetCallback: (() => void) | null = null;
 
 // Clean up on Vite HMR to prevent duplicate listeners
 // @ts-ignore
@@ -100,13 +107,15 @@ if (import.meta.hot) {
  * @param onShutdownRequested - Callback when this tab should shut down
  * @param onTakeoverRequested - Callback when another tab requests to become main
  * @param onBackupRequested - Callback when another tab requests a backup (main tab only)
+ * @param onSiteReset - Callback when another tab has reset/deleted the site
  * @returns TabInfo for the current tab
  */
 export function initTabCoordinator(
 	siteSlug: string,
 	onShutdownRequested?: (reason: string) => void,
 	onTakeoverRequested?: () => void,
-	onBackupRequested?: () => Promise<boolean>
+	onBackupRequested?: () => Promise<boolean>,
+	onSiteReset?: () => void
 ): TabInfo {
 	if (currentTabInfo && currentTabInfo.siteSlug === siteSlug) {
 		return currentTabInfo;
@@ -126,6 +135,7 @@ export function initTabCoordinator(
 	shutdownCallback = onShutdownRequested || null;
 	takeoverCallback = onTakeoverRequested || null;
 	backupRequestCallback = onBackupRequested || null;
+	siteResetCallback = onSiteReset || null;
 
 	try {
 		channel = new BroadcastChannel(CHANNEL_NAME);
@@ -164,6 +174,7 @@ export function destroyTabCoordinator(): void {
 	shutdownCallback = null;
 	takeoverCallback = null;
 	backupRequestCallback = null;
+	siteResetCallback = null;
 }
 
 /**
@@ -399,6 +410,24 @@ export async function requestRemoteBackup(
 }
 
 /**
+ * Broadcast that a site is being reset/deleted.
+ * This notifies other tabs to reload since the site data is being deleted.
+ *
+ * @param siteSlug - The site being reset
+ */
+export function broadcastSiteReset(siteSlug: string): void {
+	if (!channel) {
+		return;
+	}
+
+	const message: SiteResetMessage = {
+		type: 'site-reset',
+		siteSlug,
+	};
+	channel.postMessage(message);
+}
+
+/**
  * Handle incoming messages from other tabs.
  */
 function handleMessage(event: MessageEvent<TabCoordinatorMessage>): void {
@@ -478,6 +507,13 @@ function handleMessage(event: MessageEvent<TabCoordinatorMessage>): void {
 		case 'backup-completed':
 			// The main tab completed our backup request
 			// This is handled by the listener in requestRemoteBackup
+			break;
+
+		case 'site-reset':
+			// Another tab has reset/deleted the site
+			if (message.siteSlug === currentTabInfo.siteSlug) {
+				siteResetCallback?.();
+			}
 			break;
 	}
 }

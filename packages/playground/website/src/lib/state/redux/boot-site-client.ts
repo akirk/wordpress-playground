@@ -195,6 +195,12 @@ export function bootSiteClient(
 					logger.info(
 						'Switched to dependent mode - another tab has taken over as main'
 					);
+				},
+				undefined, // onBackupRequested - handled separately via setBackupRequestCallback
+				() => {
+					// Site was reset by another tab - reload to start fresh
+					window.location.href =
+						window.location.origin + window.location.pathname;
 				}
 			);
 
