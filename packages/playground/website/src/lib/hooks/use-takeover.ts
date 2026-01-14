@@ -1,16 +1,19 @@
 import { useCallback, useState, useEffect } from 'react';
 import { usePlaygroundClientInfo } from '../use-playground-client';
 import { useActiveSite } from '../state/redux/store';
-import { requestTakeover } from '../state/redux/tab-coordinator';
+import {
+	requestTakeover,
+	requestRemoteBackup,
+} from '../state/redux/tab-coordinator';
 
 const PENDING_ACTION_KEY = 'playground-pending-takeover-action';
 
-export type PendingAction = 'backup' | null;
+export type PendingAction = 'import' | null;
 
 /**
  * Store a pending action to execute after takeover + reload
  */
-function setPendingAction(action: PendingAction): void {
+export function setPendingAction(action: PendingAction): void {
 	if (action) {
 		sessionStorage.setItem(PENDING_ACTION_KEY, action);
 	} else {
@@ -83,9 +86,10 @@ export function useTakeover() {
 }
 
 /**
- * Hook to check for and execute pending actions after takeover + reload
+ * Hook to check for and execute pending actions after takeover + reload.
+ * Currently only handles 'import' action to open the backup overlay.
  */
-export function usePendingTakeoverAction(onBackup: () => void) {
+export function usePendingTakeoverAction(onImport: () => void) {
 	const clientInfo = usePlaygroundClientInfo();
 	const isMainMode = clientInfo && !clientInfo.isDependentMode;
 
@@ -93,12 +97,45 @@ export function usePendingTakeoverAction(onBackup: () => void) {
 		if (!isMainMode) return;
 
 		const pendingAction = consumePendingAction();
-		if (pendingAction === 'backup') {
+		if (pendingAction === 'import') {
 			// Small delay to ensure everything is fully initialized
 			const timer = setTimeout(() => {
-				onBackup();
+				onImport();
 			}, 500);
 			return () => clearTimeout(timer);
 		}
-	}, [isMainMode, onBackup]);
+	}, [isMainMode, onImport]);
+}
+
+/**
+ * Hook to request a backup from the main tab when in dependent mode.
+ * The backup file will be downloaded in the main tab.
+ */
+export function useRemoteBackup() {
+	const clientInfo = usePlaygroundClientInfo();
+	const activeSite = useActiveSite();
+	const [isRequestingBackup, setIsRequestingBackup] = useState(false);
+
+	const isDependentMode = clientInfo?.isDependentMode ?? false;
+
+	const requestBackup = useCallback(async (): Promise<boolean> => {
+		if (!activeSite || !isDependentMode || isRequestingBackup) {
+			return false;
+		}
+
+		setIsRequestingBackup(true);
+		try {
+			const success = await requestRemoteBackup(activeSite.slug);
+			return success;
+		} finally {
+			setIsRequestingBackup(false);
+		}
+	}, [activeSite, isDependentMode, isRequestingBackup]);
+
+	return {
+		requestBackup,
+		isRequestingBackup,
+		isDependentMode,
+		canRequestBackup: isDependentMode && !!activeSite,
+	};
 }

@@ -6,10 +6,7 @@ import { Icon, Spinner } from '@wordpress/components';
 import { backup } from '@wordpress/icons';
 import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
 import { useBackup } from '../../lib/hooks/use-backup';
-import {
-	useTakeover,
-	usePendingTakeoverAction,
-} from '../../lib/hooks/use-takeover';
+import { useTakeover, useRemoteBackup } from '../../lib/hooks/use-takeover';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -38,11 +35,9 @@ export function BackupStatusIndicator() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const { performBackup, isBackingUp } = useBackup();
-	const { performTakeover, isTakingOver, isDependentMode } = useTakeover();
+	const { isDependentMode } = useTakeover();
+	const { requestBackup, isRequestingBackup } = useRemoteBackup();
 	const lastCheckedDateRef = useRef<string>(new Date().toDateString());
-
-	// Auto-trigger backup after takeover + reload
-	usePendingTakeoverAction(performBackup);
 
 	const {
 		lastAccessDate,
@@ -112,19 +107,17 @@ export function BackupStatusIndicator() {
 	}
 
 	const urgency = getBackupUrgency(daysUsedSinceLastBackup);
-	const isWorking = isBackingUp || isTakingOver;
-	const buttonText = isTakingOver
-		? 'Reloading...'
+	const isWorking = isBackingUp || isRequestingBackup;
+	const buttonText = isRequestingBackup
+		? 'Requesting...'
 		: isBackingUp
 			? 'Backing up...'
 			: formatUsageDays(daysUsedSinceLastBackup);
 	const tooltipText = isDependentMode
-		? 'Click to reload and enable backup. Your Playground is stored in this browser and may be cleared unexpectedly.'
+		? 'Click to request a backup from the main tab. Your Playground is stored in this browser and may be cleared unexpectedly.'
 		: 'Your Playground is stored in this browser. Browser data can be cleared unexpectedly. Click to download a backup.';
 
-	const handleClick = isDependentMode
-		? () => performTakeover('backup')
-		: performBackup;
+	const handleClick = isDependentMode ? requestBackup : performBackup;
 
 	return (
 		<div className={classNames(css.indicator, css[urgency])}>

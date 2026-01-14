@@ -7,10 +7,7 @@ import { check, backup, upload } from '@wordpress/icons';
 import { logger } from '@php-wasm/logger';
 import css from './style.module.css';
 import { useBackup } from '../../lib/hooks/use-backup';
-import {
-	useTakeover,
-	usePendingTakeoverAction,
-} from '../../lib/hooks/use-takeover';
+import { useTakeover, useRemoteBackup } from '../../lib/hooks/use-takeover';
 
 function isSameDay(timestamp1: number, timestamp2: number): boolean {
 	const d1 = new Date(timestamp1);
@@ -77,13 +74,11 @@ export function BackupReminder() {
 	const playground = usePlaygroundClient();
 	const activeSite = useActiveSite();
 	const { performBackup, isBackingUp, canBackup } = useBackup();
-	const { performTakeover, isTakingOver, isDependentMode } = useTakeover();
+	const { isDependentMode, performTakeover } = useTakeover();
+	const { requestBackup, isRequestingBackup } = useRemoteBackup();
 	const [isImporting, setIsImporting] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
 	const importInputRef = useRef<HTMLInputElement>(null);
-
-	// Auto-trigger backup after takeover + reload
-	usePendingTakeoverAction(performBackup);
 
 	if (!activeSite || activeSite.metadata.storage === 'none') {
 		return null;
@@ -130,6 +125,19 @@ export function BackupReminder() {
 			if (importInputRef.current) {
 				importInputRef.current.value = '';
 			}
+		}
+	};
+
+	const handleImportClick = () => {
+		if (isDependentMode) {
+			const proceed = window.confirm(
+				'This Playground is also open in another tab. To import a backup, this page will reload first. Continue?'
+			);
+			if (proceed) {
+				performTakeover('import');
+			}
+		} else {
+			importInputRef.current?.click();
 		}
 	};
 
@@ -195,36 +203,34 @@ export function BackupReminder() {
 					<button
 						className={css.backupButton}
 						onClick={
-							isDependentMode
-								? () => performTakeover('backup')
-								: performBackup
+							isDependentMode ? requestBackup : performBackup
 						}
 						disabled={
 							!playground ||
 							isBackingUp ||
 							isImporting ||
-							isTakingOver
+							isRequestingBackup
 						}
 						title={
 							isDependentMode
-								? 'This will reload to enable backup'
+								? 'Backup will download in the main tab'
 								: undefined
 						}
 					>
-						{isTakingOver
-							? 'Reloading...'
+						{isRequestingBackup
+							? 'Requesting backup...'
 							: isBackingUp
 								? 'Backing up...'
 								: 'Download backup'}
 					</button>
 					<button
 						className={css.importButton}
-						onClick={() => importInputRef.current?.click()}
+						onClick={handleImportClick}
 						disabled={
-							!canBackup ||
+							!playground ||
 							isBackingUp ||
 							isImporting ||
-							isTakingOver
+							isRequestingBackup
 						}
 					>
 						<Icon icon={upload} size={16} />

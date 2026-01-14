@@ -48,12 +48,27 @@ type TakeoverAcknowledgedMessage = {
 	siteSlug: string;
 };
 
+type BackupRequestMessage = {
+	type: 'backup-request';
+	requestingTabId: string;
+	siteSlug: string;
+};
+
+type BackupCompletedMessage = {
+	type: 'backup-completed';
+	targetTabId: string;
+	siteSlug: string;
+	success: boolean;
+};
+
 type TabCoordinatorMessage =
 	| PingMessage
 	| PongMessage
 	| ShutdownRequestMessage
 	| TakeoverRequestMessage
-	| TakeoverAcknowledgedMessage;
+	| TakeoverAcknowledgedMessage
+	| BackupRequestMessage
+	| BackupCompletedMessage;
 
 const CHANNEL_NAME = 'playground-tab-coordinator';
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -63,6 +78,7 @@ let channel: BroadcastChannel | null = null;
 let currentTabInfo: TabInfo | null = null;
 let shutdownCallback: ((reason: string) => void) | null = null;
 let takeoverCallback: (() => void) | null = null;
+let backupRequestCallback: (() => Promise<boolean>) | null = null;
 
 // Clean up on Vite HMR to prevent duplicate listeners
 // @ts-ignore
@@ -83,12 +99,14 @@ if (import.meta.hot) {
  * @param siteSlug - The slug of the site being loaded
  * @param onShutdownRequested - Callback when this tab should shut down
  * @param onTakeoverRequested - Callback when another tab requests to become main
+ * @param onBackupRequested - Callback when another tab requests a backup (main tab only)
  * @returns TabInfo for the current tab
  */
 export function initTabCoordinator(
 	siteSlug: string,
 	onShutdownRequested?: (reason: string) => void,
-	onTakeoverRequested?: () => void
+	onTakeoverRequested?: () => void,
+	onBackupRequested?: () => Promise<boolean>
 ): TabInfo {
 	if (currentTabInfo && currentTabInfo.siteSlug === siteSlug) {
 		return currentTabInfo;
@@ -107,6 +125,7 @@ export function initTabCoordinator(
 
 	shutdownCallback = onShutdownRequested || null;
 	takeoverCallback = onTakeoverRequested || null;
+	backupRequestCallback = onBackupRequested || null;
 
 	try {
 		channel = new BroadcastChannel(CHANNEL_NAME);
@@ -144,6 +163,7 @@ export function destroyTabCoordinator(): void {
 	currentTabInfo = null;
 	shutdownCallback = null;
 	takeoverCallback = null;
+	backupRequestCallback = null;
 }
 
 /**
@@ -262,6 +282,17 @@ export function setDependentMode(isDependentMode: boolean): void {
 }
 
 /**
+ * Set the callback for handling backup requests from other tabs.
+ * This is separate from initTabCoordinator because the backup function
+ * may not be available at initialization time.
+ */
+export function setBackupRequestCallback(
+	callback: (() => Promise<boolean>) | null
+): void {
+	backupRequestCallback = callback;
+}
+
+/**
  * Request to take over as the main tab from another tab.
  * Sends a takeover-request and waits for acknowledgment.
  *
@@ -307,6 +338,60 @@ export async function requestTakeover(
 		setTimeout(() => {
 			if (!resolved) {
 				channel?.removeEventListener('message', ackHandler);
+				resolve(false);
+			}
+		}, timeoutMs);
+	});
+}
+
+/**
+ * Request a backup from the main tab (for dependent tabs).
+ * Sends a backup-request and waits for completion.
+ *
+ * @param siteSlug - The site to backup
+ * @param timeoutMs - How long to wait for completion (default 30000ms)
+ * @returns Promise that resolves to true if backup succeeded, false otherwise
+ */
+export async function requestRemoteBackup(
+	siteSlug: string,
+	timeoutMs: number = 30000
+): Promise<boolean> {
+	if (!channel || !currentTabInfo) {
+		return false;
+	}
+
+	return new Promise((resolve) => {
+		let resolved = false;
+
+		const completedHandler = (
+			event: MessageEvent<TabCoordinatorMessage>
+		) => {
+			const message = event.data;
+			if (
+				message.type === 'backup-completed' &&
+				message.siteSlug === siteSlug &&
+				message.targetTabId === currentTabInfo?.tabId
+			) {
+				resolved = true;
+				channel?.removeEventListener('message', completedHandler);
+				resolve(message.success);
+			}
+		};
+
+		channel!.addEventListener('message', completedHandler);
+
+		// Send backup request
+		const requestMessage: BackupRequestMessage = {
+			type: 'backup-request',
+			requestingTabId: currentTabInfo.tabId,
+			siteSlug,
+		};
+		channel!.postMessage(requestMessage);
+
+		// Timeout - if no response received, resolve false
+		setTimeout(() => {
+			if (!resolved) {
+				channel?.removeEventListener('message', completedHandler);
 				resolve(false);
 			}
 		}, timeoutMs);
@@ -368,6 +453,31 @@ function handleMessage(event: MessageEvent<TabCoordinatorMessage>): void {
 		case 'takeover-acknowledged':
 			// The main tab has acknowledged our takeover request
 			// This is handled by the waitForTakeoverAck listener in requestTakeover
+			break;
+
+		case 'backup-request':
+			// Another tab is requesting we perform a backup
+			if (
+				message.siteSlug === currentTabInfo.siteSlug &&
+				!currentTabInfo.isDependentMode &&
+				backupRequestCallback
+			) {
+				// Perform backup and send result
+				backupRequestCallback().then((success) => {
+					const completedMessage: BackupCompletedMessage = {
+						type: 'backup-completed',
+						targetTabId: message.requestingTabId,
+						siteSlug: message.siteSlug,
+						success,
+					};
+					channel?.postMessage(completedMessage);
+				});
+			}
+			break;
+
+		case 'backup-completed':
+			// The main tab completed our backup request
+			// This is handled by the listener in requestRemoteBackup
 			break;
 	}
 }
