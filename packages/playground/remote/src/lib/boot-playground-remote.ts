@@ -410,23 +410,10 @@ export async function bootPlaygroundRemote() {
 		async boot(options) {
 			await phpWorkerApi.boot(options);
 
-			console.log(
-				'[remote] Setting up service worker message listener for scope:',
-				options.scope
-			);
-
 			// Proxy the service worker messages to the web worker:
 			navigator.serviceWorker.addEventListener(
 				'message',
 				async function onMessage(event) {
-					console.log(
-						'[remote] Received service worker message:',
-						event.data.method,
-						'scope:',
-						event.data.scope,
-						'our scope:',
-						options.scope
-					);
 					/**
 					 * Ignore events meant for other PHP instances to
 					 * avoid handling the same event twice.
@@ -435,29 +422,15 @@ export async function bootPlaygroundRemote() {
 					 * same message to all application instances across all browser tabs.
 					 */
 					if (options.scope && event.data.scope !== options.scope) {
-						console.log(
-							'[remote] Ignoring message - scope mismatch'
-						);
 						return;
 					}
 
-					console.log(
-						'[remote] Handling message:',
-						event.data.method,
-						'requestId:',
-						event.data.requestId
-					);
-					// Wait for the PHP API client to be set by bootPlaygroundRemote
 					const args = event.data.args || [];
 					const method = event.data
 						.method as keyof PlaygroundWorkerEndpoint;
 					// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 					const result = await (phpWorkerApi[method] as Function)(
 						...args
-					);
-					console.log(
-						'[remote] Sending response for requestId:',
-						event.data.requestId
 					);
 					event.source!.postMessage(
 						responseTo(event.data.requestId, result)

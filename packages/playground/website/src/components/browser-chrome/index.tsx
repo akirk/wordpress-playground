@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import css from './style.module.css';
 import AddressBar from '../address-bar';
 import classNames from 'classnames';
@@ -22,6 +22,7 @@ import { PersistentPlaygroundOverlay } from '../persistent-playground-overlay';
 import { SaveStatusIndicator } from './save-status-indicator';
 import { BackupStatusIndicator } from './backup-status-indicator';
 import { defaultStorageType } from 'virtual:website-defaults';
+import { usePendingTakeoverAction } from '../../lib/hooks/use-takeover';
 
 interface BrowserChromeProps {
 	children?: React.ReactNode;
@@ -52,6 +53,11 @@ export default function BrowserChrome({
 	const [isSettingsModalOpen, setIsSettingsModalOpen] = React.useState(false);
 	const [isPlaygroundsOverlayOpen, setIsPlaygroundsOverlayOpen] =
 		React.useState(false);
+	const openPlaygroundsOverlay = useCallback(
+		() => setIsPlaygroundsOverlayOpen(true),
+		[]
+	);
+	usePendingTakeoverAction(openPlaygroundsOverlay);
 	const onSettingsToggle = () => setIsSettingsModalOpen(!isSettingsModalOpen);
 	const closeSettingsModal = () => setIsSettingsModalOpen(false);
 	const closePlaygroundsOverlay = () => setIsPlaygroundsOverlayOpen(false);

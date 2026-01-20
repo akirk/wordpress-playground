@@ -18,6 +18,7 @@ import {
 	getBlueprintUrl,
 	healthCheckRecoveryBlueprint,
 } from '../../lib/health-check-recovery';
+import { broadcastSiteReset } from '../../lib/state/redux/tab-coordinator';
 
 type PluginBlueprint = {
 	title: string;
@@ -198,15 +199,21 @@ export function PersistentPlaygroundOverlay({
 			return;
 		}
 
-		const proceed = window.confirm(
-			'Are you sure you want to start over? This will delete all your data and reset WordPress to a fresh install.'
-		);
+		const { backupHistory = [] } = activeSite.metadata;
+		const hasBackup = backupHistory.length > 0;
+
+		const message = hasBackup
+			? 'Are you sure you want to start over? This will delete all your data and reset WordPress to a fresh install.'
+			: 'Are you sure you want to start over? You have never made a backup – all your data will be permanently lost.';
+
+		const proceed = window.confirm(message);
 		if (!proceed) {
 			return;
 		}
 
 		setIsDeleting(true);
 		try {
+			broadcastSiteReset(activeSite.slug);
 			await opfsSiteStorage?.delete(activeSite.slug);
 			window.location.href =
 				window.location.origin + window.location.pathname;

@@ -1,9 +1,13 @@
-import { useState, useCallback } from 'react';
-import { usePlaygroundClient } from '../use-playground-client';
+import { useState, useCallback, useEffect } from 'react';
+import {
+	usePlaygroundClient,
+	usePlaygroundClientInfo,
+} from '../use-playground-client';
 import { useActiveSite, useAppDispatch } from '../state/redux/store';
 import { updateSiteMetadata } from '../state/redux/slice-sites';
 import { zipWpContent } from '@wp-playground/client';
 import saveAs from 'file-saver';
+import { setBackupRequestCallback } from '../state/redux/tab-coordinator';
 
 function sanitizeForFilename(name: string): string {
 	return name
@@ -28,7 +32,7 @@ async function getWordPressSiteName(
 		const response = await playground.run({
 			code: `<?php
 				require_once '/wordpress/wp-load.php';
-				echo get_option('blogname', 'WordPress');
+				echo html_entity_decode(get_option('blogname', 'WordPress'), ENT_QUOTES, 'UTF-8');
 			`,
 		});
 		const name = response.text.trim();
@@ -40,9 +44,12 @@ async function getWordPressSiteName(
 
 export function useBackup() {
 	const playground = usePlaygroundClient();
+	const clientInfo = usePlaygroundClientInfo();
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const [isBackingUp, setIsBackingUp] = useState(false);
+
+	const isMainMode = clientInfo && !clientInfo.isDependentMode;
 
 	const performBackup = useCallback(async (): Promise<boolean> => {
 		if (!playground || !activeSite || isBackingUp) {
@@ -86,6 +93,16 @@ export function useBackup() {
 			setIsBackingUp(false);
 		}
 	}, [playground, activeSite, isBackingUp, dispatch]);
+
+	// Register this tab as the backup handler when in main mode
+	useEffect(() => {
+		if (isMainMode && playground && activeSite) {
+			setBackupRequestCallback(performBackup);
+			return () => {
+				setBackupRequestCallback(null);
+			};
+		}
+	}, [isMainMode, playground, activeSite, performBackup]);
 
 	return {
 		performBackup,
