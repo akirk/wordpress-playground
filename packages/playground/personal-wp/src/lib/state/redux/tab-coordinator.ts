@@ -151,10 +151,8 @@ export function initTabCoordinator(
 				channel = null;
 			}
 		});
-	} catch (e) {
-		console.warn(
-			'BroadcastChannel not supported, tab coordination disabled'
-		);
+	} catch {
+		// BroadcastChannel not supported
 	}
 
 	return currentTabInfo;
@@ -308,7 +306,7 @@ export function setBackupRequestCallback(
  */
 export async function requestTakeover(
 	siteSlug: string,
-	timeoutMs: number = 2000
+	timeoutMs = 2000
 ): Promise<boolean> {
 	if (!channel || !currentTabInfo) {
 		return false;
@@ -361,7 +359,7 @@ export async function requestTakeover(
  */
 export async function requestRemoteBackup(
 	siteSlug: string,
-	timeoutMs: number = 30000
+	timeoutMs = 30000
 ): Promise<boolean> {
 	if (!channel || !currentTabInfo) {
 		return false;

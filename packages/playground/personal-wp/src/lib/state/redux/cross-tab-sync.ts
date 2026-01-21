@@ -41,8 +41,8 @@ export function initCrossTabSync(storeDispatch: PlaygroundDispatch): void {
 	try {
 		channel = new BroadcastChannel(CHANNEL_NAME);
 		channel.onmessage = handleMessage;
-	} catch (e) {
-		console.warn('BroadcastChannel not supported, cross-tab sync disabled');
+	} catch {
+		// BroadcastChannel not supported
 	}
 }
 
