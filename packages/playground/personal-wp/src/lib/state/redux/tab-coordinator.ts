@@ -10,7 +10,7 @@
  * 4. Signaling when a new tab can reuse an existing service worker
  */
 
-type TabInfo = {
+export type TabInfo = {
 	tabId: string;
 	createdAt: number;
 	siteSlug: string;

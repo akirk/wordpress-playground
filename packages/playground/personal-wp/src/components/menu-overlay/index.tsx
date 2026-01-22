@@ -16,6 +16,7 @@ import {
 	healthCheckRecoveryBlueprint,
 } from '../../lib/health-check-recovery';
 import { BackupReminder } from '../backup-reminder';
+import { TabInfoWindow } from '../tab-info-window';
 
 interface MenuOverlayProps {
 	onClose: () => void;
@@ -61,6 +62,7 @@ export function MenuOverlay({ onClose }: MenuOverlayProps) {
 		<Overlay onClose={onClose}>
 			<OverlayHeader onClose={onClose} />
 			<OverlayBody>
+				<TabInfoWindow />
 				<OverlaySection
 					title="Personal Playground"
 					description="Your WordPress data is stored in your browser and will persist across sessions."
