@@ -77,8 +77,8 @@ export function useTabTracking(
 				existingTabs.forEach((tab) => knownTabs.set(tab.tabId, tab));
 				setOtherTabs(Array.from(knownTabs.values()));
 				checkWorkerLost();
-			} catch (error) {
-				console.error('Failed to check for existing tabs:', error);
+			} catch {
+				// Failed to check for existing tabs - continue without error
 			}
 		}
 
@@ -131,8 +131,8 @@ export function useTabTracking(
 				}
 				clearInterval(refreshInterval);
 			};
-		} catch (error) {
-			console.warn('BroadcastChannel not supported:', error);
+		} catch {
+			// BroadcastChannel not supported - use polling fallback
 			const fallbackInterval = setInterval(checkTabs, 60000);
 			return () => {
 				isActive = false;

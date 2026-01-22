@@ -1,4 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+	initCrossTabSync,
+	destroyCrossTabSync,
+	broadcastMetadataUpdate,
+	isFromBroadcast,
+} from './cross-tab-sync';
+import { sitesSlice } from './slice-sites';
 
 // Mock slice-sites to avoid browser dependencies from slice-ui
 vi.mock('./slice-sites', () => ({
@@ -11,14 +18,6 @@ vi.mock('./slice-sites', () => ({
 		},
 	},
 }));
-
-import {
-	initCrossTabSync,
-	destroyCrossTabSync,
-	broadcastMetadataUpdate,
-	isFromBroadcast,
-} from './cross-tab-sync';
-import { sitesSlice } from './slice-sites';
 
 type MessageHandler = (event: MessageEvent) => void;
 

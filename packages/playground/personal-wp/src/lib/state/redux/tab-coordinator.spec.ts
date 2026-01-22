@@ -6,7 +6,6 @@ import {
 	isTabStale,
 	setDependentMode,
 	checkForExistingTabs,
-	requestTabShutdown,
 	requestStaleTabsShutdown,
 	requestTakeover,
 	requestRemoteBackup,
@@ -226,7 +225,7 @@ describe('tab-coordinator', () => {
 		});
 
 		it('detects fresh tabs from other instances', async () => {
-			const tab1Info = initTabCoordinator('my-site');
+			initTabCoordinator('my-site');
 
 			destroyTabCoordinator();
 			initTabCoordinator('my-site');
