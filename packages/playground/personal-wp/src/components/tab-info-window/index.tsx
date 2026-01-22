@@ -1,14 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
-	useActiveSite,
 	useAppSelector,
 	getActiveClientInfo,
 } from '../../lib/state/redux/store';
-import {
-	getCurrentTabInfo,
-	checkForExistingTabs,
-	type TabInfo,
-} from '../../lib/state/redux/tab-coordinator';
+import { useTabTracking } from '../../lib/hooks/use-tab-tracking';
 import css from './style.module.css';
 
 function formatLoadTime(timestamp: number): string {
@@ -31,107 +26,26 @@ function formatLoadTime(timestamp: number): string {
 }
 
 export function TabInfoWindow() {
-	const activeSite = useActiveSite();
 	const clientInfo = useAppSelector(getActiveClientInfo);
-	const [tabInfo, setTabInfo] = useState<TabInfo | null>(null);
-	const [otherTabs, setOtherTabs] = useState<TabInfo[]>([]);
 	const [loadTime, setLoadTime] = useState<Date | null>(null);
 	const [isExpanded, setIsExpanded] = useState(false);
 	const [, setTick] = useState(0);
 
-	// In dependent mode, we have a clientInfo but it's using another tab's worker
 	const hasOwnWorker = !!clientInfo && !clientInfo.isDependentMode;
+	const { tabInfo, otherTabs } = useTabTracking(hasOwnWorker);
 
 	useEffect(() => {
-		const currentTab = getCurrentTabInfo();
-		if (currentTab) {
-			setTabInfo(currentTab);
-			setLoadTime(new Date(currentTab.createdAt));
+		if (tabInfo) {
+			setLoadTime(new Date(tabInfo.createdAt));
 		}
-	}, []);
+	}, [tabInfo]);
 
-	// Update the time display every second
 	useEffect(() => {
 		const interval = setInterval(() => {
 			setTick((t) => t + 1);
 		}, 1000);
 		return () => clearInterval(interval);
 	}, []);
-
-	useEffect(() => {
-		if (!activeSite || !tabInfo) return;
-
-		const siteSlug = activeSite.slug;
-		const knownTabs = new Map<string, TabInfo>();
-
-		async function checkTabs() {
-			try {
-				const { existingTabs } = await checkForExistingTabs(siteSlug);
-				knownTabs.clear();
-				existingTabs.forEach((tab) => knownTabs.set(tab.tabId, tab));
-				setOtherTabs(Array.from(knownTabs.values()));
-			} catch (error) {
-				console.error('Failed to check for existing tabs:', error);
-			}
-		}
-
-		checkTabs();
-
-		let channel: BroadcastChannel | null = null;
-		try {
-			channel = new BroadcastChannel('playground-tab-coordinator');
-
-			const handleMessage = (event: MessageEvent) => {
-				const message = event.data;
-
-				if (message.type === 'pong' && message.tabInfo) {
-					const otherTabId = message.tabInfo.tabId;
-					if (otherTabId !== tabInfo.tabId) {
-						knownTabs.set(otherTabId, message.tabInfo);
-						setOtherTabs(Array.from(knownTabs.values()));
-					}
-				} else if (
-					message.type === 'tab-closing' &&
-					message.tabId !== tabInfo.tabId
-				) {
-					knownTabs.delete(message.tabId);
-					setOtherTabs(Array.from(knownTabs.values()));
-				}
-			};
-
-			channel.addEventListener('message', handleMessage);
-
-			const handleBeforeUnload = () => {
-				if (channel) {
-					channel.postMessage({
-						type: 'tab-closing',
-						tabId: tabInfo.tabId,
-					});
-				}
-			};
-
-			window.addEventListener('beforeunload', handleBeforeUnload);
-
-			const refreshInterval = setInterval(checkTabs, 60000);
-
-			return () => {
-				if (channel) {
-					channel.postMessage({
-						type: 'tab-closing',
-						tabId: tabInfo.tabId,
-					});
-					channel.removeEventListener('message', handleMessage);
-					channel.close();
-				}
-				window.removeEventListener('beforeunload', handleBeforeUnload);
-				clearInterval(refreshInterval);
-			};
-		} catch (error) {
-			console.warn('BroadcastChannel not supported:', error);
-			const fallbackInterval = setInterval(checkTabs, 60000);
-			return () => clearInterval(fallbackInterval);
-		}
-	}, [activeSite, tabInfo]);
 
 	if (!tabInfo || !loadTime) {
 		return null;

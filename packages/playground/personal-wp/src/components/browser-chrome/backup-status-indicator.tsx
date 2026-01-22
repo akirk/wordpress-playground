@@ -11,7 +11,6 @@ import {
 	BACKUP_OVERDUE_THRESHOLD_DAYS,
 } from '../../lib/hooks/use-backup-constants';
 import { isSameDay } from '../../lib/utils/date';
-import { useTakeover, useRemoteBackup } from '../../lib/hooks/use-takeover';
 
 function formatUsageDays(days: number): string {
 	if (days === 1) return '1 day since backup';
@@ -29,9 +28,8 @@ function getBackupUrgency(daysUsed: number): BackupUrgency {
 export function BackupStatusIndicator() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
-	const { performBackup, isBackingUp } = useBackup();
-	const { isDependentMode } = useTakeover();
-	const { requestBackup, isRequestingBackup } = useRemoteBackup();
+	const { performBackup, isBackingUp, isRequestingRemote, isDependentMode } =
+		useBackup();
 	const lastCheckedDateRef = useRef<string>(new Date().toDateString());
 	const daysUsedRef = useRef<number>(0);
 
@@ -107,8 +105,8 @@ export function BackupStatusIndicator() {
 	}
 
 	const urgency = getBackupUrgency(daysUsedSinceLastBackup);
-	const isWorking = isBackingUp || isRequestingBackup;
-	const buttonText = isRequestingBackup
+	const isWorking = isBackingUp || isRequestingRemote;
+	const buttonText = isRequestingRemote
 		? 'Requesting...'
 		: isBackingUp
 			? 'Backing up...'
@@ -116,7 +114,6 @@ export function BackupStatusIndicator() {
 	const tooltipText = isDependentMode
 		? 'Click to request a backup from the main tab. Your Playground is stored in this browser and may be cleared unexpectedly.'
 		: 'Your Playground is stored in this browser. Browser data can be cleared unexpectedly. Click to download a backup.';
-	const handleClick = isDependentMode ? requestBackup : performBackup;
 
 	return (
 		<div className={classNames(css.indicator, css[urgency])}>
@@ -125,7 +122,7 @@ export function BackupStatusIndicator() {
 					css.backupButton,
 					css[`${urgency}Button`]
 				)}
-				onClick={handleClick}
+				onClick={performBackup}
 				disabled={isWorking}
 				type="button"
 				title={tooltipText}

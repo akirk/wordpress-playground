@@ -86,12 +86,17 @@ let shutdownCallback: ((reason: string) => void) | null = null;
 let takeoverCallback: (() => void) | null = null;
 let backupRequestCallback: (() => Promise<boolean>) | null = null;
 let siteResetCallback: (() => void) | null = null;
+let beforeUnloadHandler: (() => void) | null = null;
 
 // Clean up on Vite HMR to prevent duplicate listeners
-// @ts-ignore
-if (import.meta.hot) {
-	// @ts-ignore
-	import.meta.hot.dispose(() => {
+if (
+	typeof import.meta !== 'undefined' &&
+	(import.meta as unknown as { hot?: { dispose: (cb: () => void) => void } })
+		.hot
+) {
+	(
+		import.meta as unknown as { hot: { dispose: (cb: () => void) => void } }
+	).hot.dispose(() => {
 		if (channel) {
 			channel.close();
 			channel = null;
@@ -125,6 +130,10 @@ export function initTabCoordinator(
 	if (channel) {
 		channel.close();
 	}
+	if (beforeUnloadHandler && typeof window !== 'undefined') {
+		window.removeEventListener('beforeunload', beforeUnloadHandler);
+		beforeUnloadHandler = null;
+	}
 
 	currentTabInfo = {
 		tabId: crypto.randomUUID(),
@@ -141,7 +150,7 @@ export function initTabCoordinator(
 		channel = new BroadcastChannel(CHANNEL_NAME);
 		channel.onmessage = handleMessage;
 
-		window.addEventListener('beforeunload', () => {
+		beforeUnloadHandler = () => {
 			if (channel) {
 				channel.postMessage({
 					type: 'tab-closing',
@@ -150,7 +159,8 @@ export function initTabCoordinator(
 				channel.close();
 				channel = null;
 			}
-		});
+		};
+		window.addEventListener('beforeunload', beforeUnloadHandler);
 	} catch {
 		// BroadcastChannel not supported
 	}
@@ -165,6 +175,10 @@ export function destroyTabCoordinator(): void {
 	if (channel) {
 		channel.close();
 		channel = null;
+	}
+	if (beforeUnloadHandler && typeof window !== 'undefined') {
+		window.removeEventListener('beforeunload', beforeUnloadHandler);
+		beforeUnloadHandler = null;
 	}
 	currentTabInfo = null;
 	shutdownCallback = null;

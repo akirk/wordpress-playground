@@ -8,7 +8,10 @@ import { updateSiteMetadata } from '../state/redux/slice-sites';
 import { zipWpContent } from '@wp-playground/client';
 import { logger } from '@php-wasm/logger';
 import saveAs from 'file-saver';
-import { setBackupRequestCallback } from '../state/redux/tab-coordinator';
+import {
+	setBackupRequestCallback,
+	requestRemoteBackup,
+} from '../state/redux/tab-coordinator';
 
 function sanitizeForFilename(name: string): string {
 	return name
@@ -50,10 +53,23 @@ export function useBackup() {
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const [isBackingUp, setIsBackingUp] = useState(false);
+	const [isRequestingRemote, setIsRequestingRemote] = useState(false);
 
 	const isMainMode = clientInfo && !clientInfo.isDependentMode;
+	const isDependentMode = clientInfo?.isDependentMode ?? false;
 
 	const performBackup = useCallback(async (): Promise<boolean> => {
+		// In dependent mode, request backup from the main tab
+		if (isDependentMode && activeSite) {
+			if (isRequestingRemote) return false;
+			setIsRequestingRemote(true);
+			try {
+				return await requestRemoteBackup(activeSite.slug);
+			} finally {
+				setIsRequestingRemote(false);
+			}
+		}
+
 		if (!playground || !activeSite || isBackingUp) {
 			return false;
 		}
@@ -94,7 +110,14 @@ export function useBackup() {
 		} finally {
 			setIsBackingUp(false);
 		}
-	}, [playground, activeSite, isBackingUp, dispatch]);
+	}, [
+		playground,
+		activeSite,
+		isBackingUp,
+		isRequestingRemote,
+		isDependentMode,
+		dispatch,
+	]);
 
 	// Register this tab as the backup handler when in main mode
 	useEffect(() => {
@@ -109,6 +132,8 @@ export function useBackup() {
 	return {
 		performBackup,
 		isBackingUp,
+		isRequestingRemote,
+		isDependentMode,
 		canBackup: !!playground && !!activeSite,
 	};
 }
