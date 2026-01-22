@@ -7,16 +7,7 @@ import { check, backup, upload } from '@wordpress/icons';
 import { logger } from '@php-wasm/logger';
 import css from './style.module.css';
 import { useBackup } from '../../lib/hooks/use-backup';
-
-function isSameDay(timestamp1: number, timestamp2: number): boolean {
-	const d1 = new Date(timestamp1);
-	const d2 = new Date(timestamp2);
-	return (
-		d1.getFullYear() === d2.getFullYear() &&
-		d1.getMonth() === d2.getMonth() &&
-		d1.getDate() === d2.getDate()
-	);
-}
+import { isSameDay } from '../../lib/utils/date';
 
 function formatRelativeDate(timestamp: number): string {
 	const now = new Date();

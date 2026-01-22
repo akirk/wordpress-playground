@@ -1,11 +1,9 @@
 import { useState, useCallback } from 'react';
-import {
-	usePlaygroundClient,
-	usePlaygroundClientInfo,
-} from '../use-playground-client';
+import { usePlaygroundClient } from '../use-playground-client';
 import { useActiveSite, useAppDispatch } from '../state/redux/store';
 import { updateSiteMetadata } from '../state/redux/slice-sites';
 import { zipWpContent } from '@wp-playground/client';
+import { logger } from '@php-wasm/logger';
 import saveAs from 'file-saver';
 
 function sanitizeForFilename(name: string): string {
@@ -36,19 +34,17 @@ async function getWordPressSiteName(
 		});
 		const name = response.text.trim();
 		return name || null;
-	} catch {
+	} catch (error) {
+		logger.debug('Could not retrieve WordPress site name:', error);
 		return null;
 	}
 }
 
 export function useBackup() {
 	const playground = usePlaygroundClient();
-	const clientInfo = usePlaygroundClientInfo();
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
 	const [isBackingUp, setIsBackingUp] = useState(false);
-
-	void clientInfo;
 
 	const performBackup = useCallback(async (): Promise<boolean> => {
 		if (!playground || !activeSite || isBackingUp) {

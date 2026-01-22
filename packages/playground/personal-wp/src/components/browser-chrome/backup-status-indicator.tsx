@@ -1,21 +1,16 @@
 import { useEffect, useRef } from 'react';
-import css from './backup-status-indicator.module.css';
+import css from './style.module.css';
 import classNames from 'classnames';
 import { useActiveSite, useAppDispatch } from '../../lib/state/redux/store';
 import { Icon, Spinner } from '@wordpress/components';
 import { backup } from '@wordpress/icons';
 import { updateSiteMetadata } from '../../lib/state/redux/slice-sites';
 import { useBackup } from '../../lib/hooks/use-backup';
-
-function isSameDay(timestamp1: number, timestamp2: number): boolean {
-	const d1 = new Date(timestamp1);
-	const d2 = new Date(timestamp2);
-	return (
-		d1.getFullYear() === d2.getFullYear() &&
-		d1.getMonth() === d2.getMonth() &&
-		d1.getDate() === d2.getDate()
-	);
-}
+import {
+	BACKUP_CURRENT_THRESHOLD_DAYS,
+	BACKUP_OVERDUE_THRESHOLD_DAYS,
+} from '../../lib/hooks/use-backup-constants';
+import { isSameDay } from '../../lib/utils/date';
 
 function formatUsageDays(days: number): string {
 	if (days === 1) return '1 day since backup';
@@ -25,8 +20,8 @@ function formatUsageDays(days: number): string {
 type BackupUrgency = 'current' | 'due' | 'overdue';
 
 function getBackupUrgency(daysUsed: number): BackupUrgency {
-	if (daysUsed <= 1) return 'current';
-	if (daysUsed <= 4) return 'due';
+	if (daysUsed <= BACKUP_CURRENT_THRESHOLD_DAYS) return 'current';
+	if (daysUsed <= BACKUP_OVERDUE_THRESHOLD_DAYS) return 'due';
 	return 'overdue';
 }
 
@@ -35,6 +30,7 @@ export function BackupStatusIndicator() {
 	const dispatch = useAppDispatch();
 	const { performBackup, isBackingUp } = useBackup();
 	const lastCheckedDateRef = useRef<string>(new Date().toDateString());
+	const daysUsedRef = useRef<number>(0);
 
 	const {
 		lastAccessDate,
@@ -42,9 +38,15 @@ export function BackupStatusIndicator() {
 		daysUsedSinceLastBackup = 0,
 	} = activeSite?.metadata || {};
 
+	// Keep ref in sync with current value
+	daysUsedRef.current = daysUsedSinceLastBackup;
+
+	const siteSlug = activeSite?.slug;
+	const isTemporarySite = activeSite?.metadata.storage === 'none';
+
 	// Check for day change when tab becomes visible or periodically
 	useEffect(() => {
-		if (!activeSite || activeSite.metadata.storage === 'none') {
+		if (!siteSlug || isTemporarySite) {
 			return;
 		}
 
@@ -55,12 +57,10 @@ export function BackupStatusIndicator() {
 				// It's a new day - increment the counter
 				dispatch(
 					updateSiteMetadata({
-						slug: activeSite.slug,
+						slug: siteSlug,
 						changes: {
 							lastAccessDate: Date.now(),
-							daysUsedSinceLastBackup:
-								(activeSite.metadata.daysUsedSinceLastBackup ||
-									0) + 1,
+							daysUsedSinceLastBackup: daysUsedRef.current + 1,
 						},
 					})
 				);
@@ -85,7 +85,7 @@ export function BackupStatusIndicator() {
 			);
 			clearInterval(interval);
 		};
-	}, [activeSite, dispatch]);
+	}, [siteSlug, isTemporarySite, dispatch]);
 
 	// Only show backup indicator if user has returned after creation day
 	const hasReturnedAfterCreation =
