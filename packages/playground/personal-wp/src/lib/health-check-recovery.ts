@@ -1,8 +1,10 @@
+import type { Blueprint } from '@wp-playground/blueprints';
+
 //
 // The Health Check MU-plugin requires a database option 'health-check-disable-plugin-hash'
 // that matches: cookieValue + md5(REMOTE_ADDR). We add an earlier MU-plugin (alphabetically)
 // that uses pre_option filter to return the expected hash, bypassing the database check.
-export const healthCheckRecoveryBlueprint = {
+export const healthCheckRecoveryBlueprint: Blueprint = {
 	steps: [
 		{
 			step: 'installPlugin',
@@ -33,7 +35,7 @@ export const healthCheckRecoveryBlueprint = {
 // Bypass Health Check hash verification by setting both the GET param and option.
 // Self-delete when user disables troubleshooting mode via Health Check UI.
 if (isset($_GET['health-check-disable-troubleshooting'])) {
-    @unlink(__FILE__);
+    unlink(__FILE__);
 } else {
     $_GET['health-check-disable-plugin-hash'] = 'playground-recovery';
     add_filter('pre_option_health-check-disable-plugin-hash', function() {
@@ -64,7 +66,7 @@ if (isset($_GET['health-check-disable-troubleshooting'])) {
 		'/wp-admin/plugins.php?health-check-disable-plugin-hash=playground-recovery',
 };
 
-export function getBlueprintUrl(blueprint: object): string {
+export function getBlueprintUrl(blueprint: Blueprint): string {
 	const url = new URL(window.location.href);
 	url.hash = '';
 	const jsonStr = JSON.stringify(blueprint);
@@ -78,8 +80,4 @@ export function getBlueprintUrl(blueprint: object): string {
 		`data:application/json;base64,${encoded}`
 	);
 	return url.toString();
-}
-
-export function getHealthCheckRecoveryUrl(): string {
-	return getBlueprintUrl(healthCheckRecoveryBlueprint);
 }
