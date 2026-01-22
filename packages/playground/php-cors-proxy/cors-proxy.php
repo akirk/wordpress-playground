@@ -87,13 +87,6 @@ $ch = curl_init($targetUrl);
 
 $http_code_sent = false;
 
-// Buffer git responses to avoid streaming issues with PHP built-in server.
-// isomorphic-git expects the response to be a complete body, not chunked.
-$is_git_request = strpos($targetUrl, '/git-upload-pack') !== false
-    || strpos($targetUrl, '/git-receive-pack') !== false
-    || strpos($targetUrl, '/info/refs') !== false;
-$buffered_response = $is_git_request ? '' : null;
-
 $relay_http_code_and_initial_headers_if_not_already_sent = function () use ($ch, &$http_code_sent) {
     if (!$http_code_sent) {
         // Set the response code from the target server
@@ -244,13 +237,8 @@ curl_setopt(
     }
 );
 
-curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) use (&$buffered_response) {
-    if ($buffered_response !== null) {
-        // Buffer git responses instead of streaming
-        $buffered_response .= $data;
-    } else {
-        send_response_chunk($data);
-    }
+curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) {
+    send_response_chunk($data);
     return strlen($data);
 });
 
@@ -259,9 +247,12 @@ $requestMethod = $_SERVER['REQUEST_METHOD'];
 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $requestMethod);
 
 if ($requestMethod !== 'GET' && $requestMethod !== 'HEAD' && $requestMethod !== 'OPTIONS') {
-    $postData = file_get_contents('php://input');
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+    $input = fopen('php://input', 'r');
+    curl_setopt($ch, CURLOPT_UPLOAD, true);
+    curl_setopt($ch, CURLOPT_INFILE, $input);
+    if (isset($_SERVER['CONTENT_LENGTH'])) {
+        curl_setopt($ch, CURLOPT_INFILESIZE, $_SERVER['CONTENT_LENGTH']);
+    }
 }
 
 // Run cURL session
@@ -270,10 +261,4 @@ if (!curl_exec($ch)) {
     send_response_chunk("Bad Gateway – curl error: " . curl_error($ch));
 } else {
     @$relay_http_code_and_initial_headers_if_not_already_sent();
-
-    // Send buffered git response all at once
-    if ($buffered_response !== null && strlen($buffered_response) > 0) {
-        header('Content-Length: ' . strlen($buffered_response));
-        echo $buffered_response;
-    }
 }
