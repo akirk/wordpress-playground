@@ -1,7 +1,7 @@
 <?php
-// Set error reporting
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Suppress deprecation warnings to avoid polluting response body
+error_reporting(E_ALL & ~E_DEPRECATED);
+ini_set('display_errors', 0);
 
 define('MAX_REQUEST_SIZE', 1 * 1024 * 1024); // 1MB
 define('MAX_RESPONSE_SIZE', 100 * 1024 * 1024); // 100MB
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET' && $_SERVER['REQUEST_METHOD'] !== 'POST
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'GET' && $_SERVER['CONTENT_LENGTH'] >= MAX_REQUEST_SIZE) {
+if ($_SERVER['REQUEST_METHOD'] !== 'GET' && isset($_SERVER['CONTENT_LENGTH']) && $_SERVER['CONTENT_LENGTH'] >= MAX_REQUEST_SIZE) {
     http_response_code(413);
     echo "Request Entity Too Large";
     exit;
@@ -85,8 +85,14 @@ define(
 
 $ch = curl_init($targetUrl);
 
-$is_chunked_response = false;
 $http_code_sent = false;
+
+// Buffer git responses to avoid streaming issues with PHP built-in server.
+// isomorphic-git expects the response to be a complete body, not chunked.
+$is_git_request = strpos($targetUrl, '/git-upload-pack') !== false
+    || strpos($targetUrl, '/git-receive-pack') !== false
+    || strpos($targetUrl, '/info/refs') !== false;
+$buffered_response = $is_git_request ? '' : null;
 
 $relay_http_code_and_initial_headers_if_not_already_sent = function () use ($ch, &$http_code_sent) {
     if (!$http_code_sent) {
@@ -102,31 +108,9 @@ $relay_http_code_and_initial_headers_if_not_already_sent = function () use ($ch,
 };
 
 function send_response_chunk($data) {
-    if (should_send_as_chunked_response()) {
-        // We need to manually chunk the response when running in the PHP
-        // built-in server. It won't handle that for us.
-        echo sprintf("%s\r\n%s\r\n", dechex(strlen($data)), $data);
-    } else {
-        // When running behing an Apache or Nginx or another webserver,
-        // it will handle the chunking for us. Manually sending the chunk
-        // header, \r\n separator, body, and \r\n trailer isn't just
-        // unnecessary, but it would actually include those bytes in the
-        // response body.
-        echo $data;
-    }
+    echo $data;
     @ob_flush();
     @flush();
-}
-
-/**
- * We need to manually chunk the response when running the PHP
- * dev server AND the transfer-encoding header is set to chunked.
- * 
- * Apache, Nginx, etc. will handle the chunking for us.
- */
-function should_send_as_chunked_response() {
-    global $is_chunked_response;
-    return $is_chunked_response && php_sapi_name() === 'cli-server';
 }
 
 // Pin the hostname resolution to an IP we've resolved earlier
@@ -185,18 +169,17 @@ curl_setopt(
         $header
     ) use (
         $targetUrl,
-        $relay_http_code_and_initial_headers_if_not_already_sent,
-        &$is_chunked_response
+        $relay_http_code_and_initial_headers_if_not_already_sent
     ) {
         @$relay_http_code_and_initial_headers_if_not_already_sent();
 
         $len = strlen($header);
         $colonPos = strpos($header, ':');
-        
+
         if ($colonPos === false) {
             return $len;
         }
-        
+
         $name = strtolower(substr($header, 0, $colonPos));
         $value = trim(substr($header, $colonPos + 1));
 
@@ -210,9 +193,19 @@ curl_setopt(
             return $len;
         }
 
-        if ($name === 'transfer-encoding' && stripos($value, 'chunked') !== false) {
-            $is_chunked_response = true;
-            header($header, false);
+        // Don't pass through Transfer-Encoding: chunked. curl already decodes
+        // chunked responses for us, so we're sending plain data. Passing through
+        // this header and then manually re-chunking caused parsing errors in
+        // Node.js HTTP clients (e.g., Vite's dev proxy).
+        if ($name === 'transfer-encoding') {
+            return $len;
+        }
+
+        // Don't pass through Connection header. The proxy manages its own
+        // connection with the client. Passing through "Connection: close" from
+        // the upstream server causes Node.js HTTP parser errors ("Data after
+        // Connection: close") since the proxy continues sending data.
+        if ($name === 'connection') {
             return $len;
         }
 
@@ -251,8 +244,13 @@ curl_setopt(
     }
 );
 
-curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) use (&$is_chunked_response) {
-    send_response_chunk($data, $is_chunked_response);
+curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) use (&$buffered_response) {
+    if ($buffered_response !== null) {
+        // Buffer git responses instead of streaming
+        $buffered_response .= $data;
+    } else {
+        send_response_chunk($data);
+    }
     return strlen($data);
 });
 
@@ -261,25 +259,21 @@ $requestMethod = $_SERVER['REQUEST_METHOD'];
 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $requestMethod);
 
 if ($requestMethod !== 'GET' && $requestMethod !== 'HEAD' && $requestMethod !== 'OPTIONS') {
-    $input = fopen('php://input', 'r');
-    curl_setopt($ch, CURLOPT_UPLOAD, true);
-    curl_setopt($ch, CURLOPT_INFILE, $input);
-    curl_setopt($ch, CURLOPT_INFILESIZE, $_SERVER['CONTENT_LENGTH']);
+    $postData = file_get_contents('php://input');
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
 }
 
-// Execute cURL session
+// Run cURL session
 if (!curl_exec($ch)) {
     http_response_code(502);
-    send_response_chunk("Bad Gateway – curl_exec error: " . curl_error($ch));
+    send_response_chunk("Bad Gateway – curl error: " . curl_error($ch));
 } else {
     @$relay_http_code_and_initial_headers_if_not_already_sent();
-}
-// Close cURL session
-curl_close($ch);
 
-// Only send chunked transfer encoding footer if we're using chunked encoding.
-// We need to manually send the footer when running in the PHP built-in server
-// because, unlike apache or nginx, it won't handle that for us.
-if (should_send_as_chunked_response()) {
-    echo "0\r\n\r\n";
+    // Send buffered git response all at once
+    if ($buffered_response !== null && strlen($buffered_response) > 0) {
+        header('Content-Length: ' . strlen($buffered_response));
+        echo $buffered_response;
+    }
 }

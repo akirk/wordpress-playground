@@ -68,7 +68,17 @@ export async function fetchWithCorsProxy(
 		// Check for firewall interference: if we got a response but it's
 		// missing the CORS proxy identification header, the response likely
 		// came from a network firewall rather than the actual CORS proxy.
-		if (!response.headers.has(CORS_PROXY_HEADER)) {
+		// Skip this check for local development proxies where the header
+		// might be missing from cached responses.
+		const isLocalProxy =
+			corsProxyUrl.startsWith('/') ||
+			corsProxyUrl.startsWith('http://localhost') ||
+			corsProxyUrl.startsWith('http://127.0.0.1');
+		if (
+			!response.headers.has(CORS_PROXY_HEADER) &&
+			!isLocalProxy &&
+			response.ok
+		) {
 			throw new FirewallInterferenceError(
 				requestObject.url,
 				response.status,
