@@ -12,10 +12,7 @@ const promisedOfflineModeCache = caches.open(LATEST_CACHE_NAME);
 export async function cacheFirstFetch(request: Request): Promise<Response> {
 	const offlineModeCache = await promisedOfflineModeCache;
 
-	/**
-	 * The Cache API only supports caching GET requests.
-	 * For POST requests (like git protocol requests), skip caching entirely.
-	 */
+	// The Cache API only supports GET requests
 	const canCache = request.method === 'GET';
 
 	if (canCache) {
