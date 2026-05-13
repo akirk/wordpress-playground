@@ -951,7 +951,7 @@ function SeamlessViewport({ siteSlug }: { siteSlug: string }) {
 	);
 	const activeSiteError = useAppSelector(selectActiveSiteError);
 	const activeSiteSlug = useAppSelector((state) => state.ui.activeSite?.slug);
-	const hasActiveSiteError = activeSiteError && activeSiteSlug === siteSlug;
+	const hasActiveSiteError = !!activeSiteError && activeSiteSlug === siteSlug;
 
 	const loadingScreenHtml = useMemo(
 		() =>
@@ -960,6 +960,9 @@ function SeamlessViewport({ siteSlug }: { siteSlug: string }) {
 				: getWelcomeHtml(),
 		[forceWelcome, isReturningUser, siteSlug]
 	);
+	const shouldUseWpAdminSiteTools =
+		!isBooting && !hasActiveSiteError && isWpAdminUrl(url);
+	const showViewportLatch = !siteManagerIsOpen && !shouldUseWpAdminSiteTools;
 
 	const [installingBlueprint, setInstallingBlueprint] = useState<
 		string | null
@@ -1186,6 +1189,11 @@ function SeamlessViewport({ siteSlug }: { siteSlug: string }) {
 			);
 			if (installBlueprintMessage) {
 				void installBlueprintFromRelay(event, installBlueprintMessage);
+				return;
+			}
+
+			if (isOpenSiteToolsMessage(relayValidation.data)) {
+				dispatch(setSiteManagerOpen(true));
 			}
 		}
 		window.addEventListener('message', handleMessage);
@@ -1195,6 +1203,7 @@ function SeamlessViewport({ siteSlug }: { siteSlug: string }) {
 	}, [
 		applyBlueprint,
 		applyBlueprintInMainTab,
+		dispatch,
 		hasLocalRuntimeClient,
 		isDependentMode,
 		requestBlueprintInstallConfirmation,
@@ -1317,7 +1326,7 @@ function SeamlessViewport({ siteSlug }: { siteSlug: string }) {
 			/>
 			<div
 				className={classNames(css.sidebarLatch, {
-					[css.sidebarLatchHidden]: siteManagerIsOpen,
+					[css.sidebarLatchHidden]: !showViewportLatch,
 				})}
 			>
 				<Button
@@ -1709,6 +1718,10 @@ function MainTabRecoveryNotice({
 	);
 }
 
+function isWpAdminUrl(url: string | undefined): boolean {
+	return !!url && /^\/?wp-admin(\/|$|\?)/.test(url);
+}
+
 type RelayMessageData = {
 	type: 'relay';
 	relayType?: unknown;
@@ -1739,6 +1752,11 @@ type BlueprintInstallPreviewState =
 			status: 'error';
 			error: string;
 	  };
+
+type OpenSiteToolsMessageData = {
+	type: 'relay';
+	relayType: 'personal-wp-open-site-tools';
+};
 
 type ApplyBlueprintOptions = {
 	allowNavigation?: boolean;
@@ -1803,6 +1821,12 @@ function getInstallBlueprintMessageData(
 		blueprintUrl: data.blueprintUrl,
 		requestId: getRequestId(data),
 	};
+}
+
+function isOpenSiteToolsMessage(
+	data: RelayMessageData
+): data is OpenSiteToolsMessageData {
+	return data.relayType === 'personal-wp-open-site-tools';
 }
 
 function getRequestId(data: RelayMessageData): string | undefined {
