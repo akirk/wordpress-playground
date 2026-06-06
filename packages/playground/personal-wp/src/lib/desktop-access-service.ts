@@ -7,13 +7,10 @@
 
 import { logger } from '@php-wasm/logger';
 import type { PlaygroundClient } from '@wp-playground/remote';
-import {
-	TunnelHost,
-	type TunnelHostMetrics,
-	type TunnelHostStatus,
-} from './relay-server';
+import { DirectTunnelHost } from './desktop-access-direct-tunnel';
+import type { TunnelHostMetrics, TunnelHostStatus } from './relay-server';
 
-let tunnelHost: TunnelHost | null = null;
+let tunnelHost: DirectTunnelHost | null = null;
 let currentSessionId: string | null = null;
 let currentShareUrl: string | null = null;
 const statusListeners = new Set<(status: DesktopAccessStatus) => void>();
@@ -57,7 +54,7 @@ export async function startDesktopAccess(
 		throw new Error('Desktop access is already starting.');
 	}
 
-	tunnelHost = new TunnelHost(playgroundClient, window.location.origin);
+	tunnelHost = new DirectTunnelHost(playgroundClient, window.location.origin);
 	tunnelHost.on('statusChange', notifyListeners);
 	tunnelHost.on('metricsChange', notifyListeners);
 	tunnelHost.on('error', (error) => {

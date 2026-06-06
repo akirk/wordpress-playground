@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import css from './style.module.css';
 import type { SessionStatusResponse } from '../../lib/relay-server/types';
+import { DirectTunnelGuest } from '../../lib/desktop-access-direct-tunnel';
 
 // @ts-ignore
 import serviceWorkerPath from '../../../../remote/service-worker.ts?worker&url';
@@ -29,6 +30,7 @@ export function DesktopAccessViewer({ sessionId }: DesktopAccessViewerProps) {
 		null
 	);
 	const iframeRef = useRef<HTMLIFrameElement>(null);
+	const directTunnelRef = useRef<DirectTunnelGuest | null>(null);
 	const guestId = useRef(getOrCreateGuestId()).current;
 
 	const relayBaseUrl = useMemo(
@@ -90,55 +92,45 @@ export function DesktopAccessViewer({ sessionId }: DesktopAccessViewerProps) {
 			scheduleNextPoll();
 		};
 
-		const probeSession = async () => {
-			try {
-				const response = await fetch(`${relayBaseUrl}/`, {
-					method: 'GET',
-					headers: { Accept: 'text/html' },
-					signal: controller.signal,
-				});
+		const directTunnel = new DirectTunnelGuest({
+			sessionId,
+			relayUrl: window.location.origin,
+			guestId,
+			onStatusChange(nextStatus) {
 				if (cancelled) {
 					return;
 				}
-				if (response.ok) {
-					setStatus('connected');
+				if (nextStatus === 'connected') {
 					sawPhoneAlive = true;
-				} else if (response.status === 503) {
+					setStatus('connected');
+					return;
+				}
+				if (nextStatus === 'error' && !sawPhoneAlive) {
 					setError(
-						'The phone is not connected. Keep my.wordpress.net open on your phone and try again.'
+						'Unable to connect directly to your phone. Keep both devices nearby and on the same network.'
 					);
 					setStatus('error');
 					return;
-				} else if (response.status === 404) {
-					setError('This desktop access link has expired.');
-					setStatus('error');
-					return;
-				} else {
-					setError(`Connection failed: ${response.statusText}`);
-					setStatus('error');
-					return;
 				}
-			} catch (err) {
-				if ((err as { name?: string })?.name === 'AbortError') {
-					return;
-				}
-				setError('Unable to connect to your phone.');
-				setStatus('error');
-				return;
-			}
-			pollOnce();
-		};
-
-		probeSession();
+				setStatus('connecting');
+			},
+		});
+		directTunnelRef.current = directTunnel;
+		directTunnel.start();
+		pollOnce();
 
 		return () => {
 			cancelled = true;
 			controller.abort();
+			directTunnel.stop();
+			if (directTunnelRef.current === directTunnel) {
+				directTunnelRef.current = null;
+			}
 			if (timeoutHandle !== null) {
 				clearTimeout(timeoutHandle);
 			}
 		};
-	}, [relayBaseUrl, statusUrl]);
+	}, [guestId, sessionId, statusUrl]);
 
 	useEffect(() => {
 		if (!('serviceWorker' in navigator)) {
@@ -180,7 +172,9 @@ export function DesktopAccessViewer({ sessionId }: DesktopAccessViewerProps) {
 				navigator.serviceWorker.controller || registration.active;
 			worker?.postMessage({
 				type: 'desktop-relay-map',
+				transport: 'direct',
 				scope: DESKTOP_RELAY_SCOPE,
+				sessionId,
 				relayBaseUrl,
 				ttl: SERVICE_WORKER_RELAY_TTL_MS,
 			});
@@ -197,7 +191,56 @@ export function DesktopAccessViewer({ sessionId }: DesktopAccessViewerProps) {
 			window.removeEventListener('pagehide', clearDesktopRelayMapping);
 			clearDesktopRelayMapping();
 		};
-	}, [relayBaseUrl]);
+	}, [relayBaseUrl, sessionId]);
+
+	useEffect(() => {
+		function handleServiceWorkerMessage(event: MessageEvent) {
+			const data = event.data;
+			if (
+				typeof data !== 'object' ||
+				data === null ||
+				data.type !== 'desktop-relay-request' ||
+				data.sessionId !== sessionId
+			) {
+				return;
+			}
+			const port = event.ports[0];
+			if (!port) {
+				return;
+			}
+			directTunnelRef.current
+				?.request({
+					requestId: data.requestId,
+					method: data.method,
+					path: data.path,
+					headers: data.headers,
+					body: data.body,
+				})
+				.then((response) => {
+					port.postMessage({
+						type: 'desktop-relay-response',
+						response,
+					});
+				})
+				.catch((error) => {
+					port.postMessage({
+						type: 'desktop-relay-error',
+						error: (error as Error).message,
+					});
+				});
+		}
+
+		navigator.serviceWorker?.addEventListener(
+			'message',
+			handleServiceWorkerMessage
+		);
+		return () => {
+			navigator.serviceWorker?.removeEventListener(
+				'message',
+				handleServiceWorkerMessage
+			);
+		};
+	}, [sessionId]);
 
 	useEffect(() => {
 		function handleMessage(event: MessageEvent) {

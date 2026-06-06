@@ -11,6 +11,8 @@
  * - GET  /relay/{sessionId}/poll              Host long-polls for guest requests
  * - POST /relay/{sessionId}/response/{reqId}  Host sends response
  * - GET  /relay/{sessionId}/status[?gid=...]  Guest health-check + heartbeat
+ * - POST /relay/{sessionId}/signal            WebRTC signaling message
+ * - GET  /relay/{sessionId}/signal?to=...     WebRTC signaling long-poll
  * - POST /relay/{sessionId}/close             Host explicitly tears down session
  * - ANY  /relay/{sessionId}/request/*         Guest requests (proxied to host)
  *
@@ -60,6 +62,7 @@
 // don't pile up.
 define('SESSION_TIMEOUT_MS', 5 * 60 * 1000);      // 5 minutes
 define('POLL_TIMEOUT_SEC', 25);                   // host long-poll
+define('SIGNAL_POLL_TIMEOUT_SEC', 25);            // WebRTC signal long-poll
 define('REQUEST_TIMEOUT_SEC', 30);                // guest request long-wait
 /**
  * How long without a host poll before we consider the host "dead". A
@@ -852,6 +855,10 @@ if ($path === '/relay/session' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     handlePoll($storage, $matches[1]);
 } elseif (preg_match('#^/relay/([^/]+)/status$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'GET') {
     handleStatus($storage, $matches[1]);
+} elseif (preg_match('#^/relay/([^/]+)/signal$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    handlePostSignal($storage, $matches[1]);
+} elseif (preg_match('#^/relay/([^/]+)/signal$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    handlePollSignal($storage, $matches[1]);
 } elseif (preg_match('#^/relay/([^/]+)/close$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'POST') {
     handleClose($storage, $matches[1]);
 } elseif (preg_match('#^/relay/([^/]+)/response/([^/]+)$#', $path, $matches) && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -1031,6 +1038,8 @@ function handleCreateSession(RelayStorage $storage): void {
         'hostConnected' => false,
         'guests' => (object) [], // serialised as {} not []
         'nextGuestOrdinal' => 1,
+        'signals' => [],
+        'nextSignalSeq' => 1,
     ];
 
     $storage->createSession($sessionId, $session);
@@ -1179,6 +1188,153 @@ function handleStatus(RelayStorage $storage, string $sessionId): void {
 
     header('Content-Type: application/json');
     echo json_encode($result);
+}
+
+/**
+ * Store a small WebRTC signaling message. This endpoint is intentionally for
+ * SDP, ICE candidates and heartbeats only; WordPress HTTP traffic should flow
+ * over the direct browser-to-browser data channel once connected.
+ */
+function handlePostSignal(RelayStorage $storage, string $sessionId): void {
+    $body = file_get_contents('php://input');
+    $payload = json_decode($body, true);
+    if (!is_array($payload)) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Invalid signal body']);
+        return;
+    }
+
+    $from = (string) ($payload['from'] ?? '');
+    $to = (string) ($payload['to'] ?? '');
+    $type = (string) ($payload['type'] ?? '');
+    if (
+        !in_array($from, ['host', 'guest'], true) ||
+        !in_array($to, ['host', 'guest'], true) ||
+        $from === $to ||
+        !in_array($type, ['offer', 'answer', 'candidate', 'heartbeat'], true)
+    ) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Invalid signal']);
+        return;
+    }
+
+    $result = $storage->withSession($sessionId, function (array &$session) use ($from, $to, $type, $payload) {
+        $now = nowMs();
+        if ($from === 'host') {
+            $session['hostConnected'] = true;
+            $session['lastPollAt'] = $now;
+        }
+
+        if ($type !== 'heartbeat') {
+            $seq = (int) ($session['nextSignalSeq'] ?? 1);
+            $session['nextSignalSeq'] = $seq + 1;
+            $signals = is_array($session['signals'] ?? null)
+                ? $session['signals']
+                : [];
+            $signals[] = [
+                'seq' => $seq,
+                'from' => $from,
+                'to' => $to,
+                'type' => $type,
+                'data' => $payload['data'] ?? null,
+                'createdAt' => $now,
+            ];
+            $session['signals'] = array_slice($signals, -200);
+            return ['seq' => $seq];
+        }
+
+        return ['seq' => (int) (($session['nextSignalSeq'] ?? 1) - 1)];
+    });
+
+    if (!$result) {
+        http_response_code(404);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Session not found']);
+        return;
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode(['ok' => true, 'seq' => $result['seq']]);
+}
+
+/**
+ * Long-poll small WebRTC signaling messages for one side of the session.
+ */
+function handlePollSignal(RelayStorage $storage, string $sessionId): void {
+    $queryString = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_QUERY) ?? '';
+    parse_str($queryString, $queryParams);
+    $to = (string) ($queryParams['to'] ?? '');
+    $since = (int) ($queryParams['since'] ?? 0);
+    $guestId = isset($queryParams['gid']) ? (string) $queryParams['gid'] : null;
+    if (!in_array($to, ['host', 'guest'], true)) {
+        http_response_code(400);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Invalid signal recipient']);
+        return;
+    }
+
+    $startTime = time();
+    while (time() - $startTime < SIGNAL_POLL_TIMEOUT_SEC) {
+        $now = nowMs();
+        $result = $storage->withSession($sessionId, function (array &$session) use ($to, $since, $guestId, $now) {
+            if (
+                !empty($session['hostConnected']) &&
+                ($session['lastPollAt'] ?? 0) > 0 &&
+                $now - $session['lastPollAt'] > HOST_DEAD_AFTER_MS
+            ) {
+                markHostDisconnected($session, 'signal poll: no host heartbeat');
+            }
+
+            if ($to === 'guest' && $guestId) {
+                recordGuestHeartbeat($session, $guestId, $now);
+            }
+
+            $messages = [];
+            $cursor = $since;
+            foreach (($session['signals'] ?? []) as $signal) {
+                $seq = (int) ($signal['seq'] ?? 0);
+                if (($signal['to'] ?? '') !== $to || $seq <= $since) {
+                    continue;
+                }
+                $messages[] = $signal;
+                $cursor = max($cursor, $seq);
+            }
+
+            $lastPollAt = (int) ($session['lastPollAt'] ?? 0);
+            $lastPollAgoMs = $lastPollAt > 0 ? $now - $lastPollAt : -1;
+            return [
+                'messages' => $messages,
+                'cursor' => $cursor,
+                'hostAlive' =>
+                    !empty($session['hostConnected']) &&
+                    $lastPollAt > 0 &&
+                    $lastPollAgoMs < HOST_DEAD_AFTER_MS,
+            ];
+        });
+
+        if (!$result) {
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => 'Session not found']);
+            return;
+        }
+        if (!empty($result['messages'])) {
+            header('Content-Type: application/json');
+            echo json_encode($result);
+            return;
+        }
+
+        usleep(100000);
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'messages' => [],
+        'cursor' => $since,
+        'hostAlive' => true,
+    ]);
 }
 
 /**
