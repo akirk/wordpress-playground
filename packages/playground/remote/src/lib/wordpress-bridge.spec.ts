@@ -112,6 +112,62 @@ describe('WordPress bridge startup during worker updates', () => {
 		);
 	});
 
+	// Browsers reject worker fetch failures with TypeError, rather than exposing
+	// a Response to startup code. Exercise both calls that can reject after a 403.
+	it.each(['register', 'update'] as const)(
+		'reuses the active worker after a 403 during %s and checks again on the next startup',
+		async (operation) => {
+			const active = registration.active;
+			const error = new TypeError(
+				'A bad HTTP response code (403) was received when fetching the script.'
+			);
+			const request =
+				operation === 'register'
+					? vi.mocked(navigator.serviceWorker.register)
+					: registration.update;
+			request.mockRejectedValueOnce(error);
+
+			await import('./wordpress-bridge');
+			expect(registration.active).toBe(active);
+			expect(postMessage).toHaveBeenCalledWith(
+				{ type: 'wordpress-bridge-ready', scope: 'test' },
+				'https://playground.test'
+			);
+
+			// A transient failure must not prevent a subsequent startup from
+			// checking for updates through the same registration.
+			vi.resetModules();
+			postMessage.mockClear();
+			await import('./wordpress-bridge');
+			expect(navigator.serviceWorker.register).toHaveBeenCalledTimes(2);
+			expect(registration.update).toHaveBeenCalledTimes(
+				operation === 'register' ? 1 : 2
+			);
+			expect(postMessage).toHaveBeenCalledWith(
+				{ type: 'wordpress-bridge-ready', scope: 'test' },
+				'https://playground.test'
+			);
+		}
+	);
+
+	it.each(['register', 'update'] as const)(
+		'rejects startup after a 403 during %s without an active worker',
+		async (operation) => {
+			registration.active = null;
+			const error = new TypeError(
+				'A bad HTTP response code (403) was received when fetching the script.'
+			);
+			const request =
+				operation === 'register'
+					? vi.mocked(navigator.serviceWorker.register)
+					: registration.update;
+			request.mockRejectedValueOnce(error);
+
+			await expect(import('./wordpress-bridge')).rejects.toBe(error);
+			expect(postMessage).not.toHaveBeenCalled();
+		}
+	);
+
 	it.each(['missing', 'inactive'])(
 		'does not report ready after a registration failure with a %s worker',
 		async (state) => {
